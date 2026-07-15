@@ -1,0 +1,121 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Administracion de Archivos</title>
+  <link rel="stylesheet" href="../css/main.css" />
+  <link rel="stylesheet" href="../css/file-conversion.css" />
+</head>
+
+<body>
+  <div class="container">
+    <h1>Administracion de Archivos</h1>
+
+    <div class="form-group">
+      <label for="adminFileType" style="font-weight: bold;">Tipo de Archivo:</label>
+      <select id="adminFileType" style="margin-top: 10px;">
+        <option value="">-- Seleccione el tipo --</option>
+        <option value="rawMaterial">RAW MATERIAL</option>
+        <option value="billOfMaterials">BILL OF MATERIAL</option>
+        <option value="finishedProduct">FINISHED PRODUCT</option>
+        <option value="splScrap">SLPSCRAP (PACKING LIST)</option>
+      </select>
+    </div>
+
+    <div id="adminFilesPanel" class="admin-files-panel">
+      <h2>Archivos</h2>
+      <!-- Filtros por columna -->
+      <h2>Filtros</h2>
+      <div class="admin-files-filters" style="margin-bottom: 12px; display: flex; gap: 1%;">
+        <div class="admin-box-filters" style="position: relative;">
+          <h3>Nombre</h3>
+          <input type="text" id="filterNombre" placeholder="ejemploRawMaterial202IUWHEIHURE" style="width: 100%;" />
+        </div>
+        <div class="admin-box-filters">
+          <h3>Nomenclatura</h3>
+          <input type="text" id="filterNomenclatura" placeholder="BM261256H" style="width: 100%;" />
+        </div>
+        <div class="admin-box-filters">
+          <h3>Fecha</h3>
+          <input type="text" id="filterFecha" placeholder="DD/MM/YYYY" style="width: 100%;" />
+        </div>
+        <div class="admin-box-filters">
+          <h3>Usuario</h3>
+          <input type="text" id="filterUsuario" placeholder="GibranPerez" style="width: 100%;" />
+        </div>
+        <div class="admin-box-filters">
+          <div class="div-separacion"></div>
+          <button type="button" id="resetFiltersBtn" class="button-reset" title="Resetear filtros"
+            style="display: flex; align-items: center; justify-content: center; height: 44px; width: 48px; min-width: 48px; max-width: 48px; padding: 0; box-shadow: none;">
+            <img class="img-filter" src="/src/icons/filtrar.png" alt="Resetear filtros"
+              style="width: 28px; height: 28px; display: block; margin: auto;" />
+          </button>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table id="adminFilesTable" class="data-table">
+          <thead>
+            <tr>
+              <th style="position: relative;">
+                Nombre
+                <button type="button" id="sortNombreBtn" class="sort-btn" title="Ordenar alfabéticamente"
+                  style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; padding: 0; margin: 0; box-shadow: none; cursor: pointer;">
+                  <img id="sortNombreIcon" src="/src/icons/ordenar-flechas-par-apuntando-hacia-arriba-y-hacia-abajo.png"
+                    alt="Ordenar" style="width: 18px; height: 18px; display: block;" />
+                </button>
+              </th>
+              <th>Nomenclatura</th>
+              <th>Ultima actualizacion</th>
+              <th>Por Usuario</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <a id="dashboardButton" class="button" href="/auth/dashboard">
+      <span class="btn-text">Volver al Dashboard</span>
+    </a>
+    <a id="createFilesButton" class="button" href="/file-creation">
+      <span class="btn-text">Crear Archivos</span>
+    </a>
+
+  </div>
+
+  <div id="deleteModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+    <div class="modal">
+      <h3 id="deleteModalTitle">Confirmar eliminacion</h3>
+      <p id="deleteModalMessage">Esta accion elimina el archivo, Desea continuar?</p>
+      <div class="modal-actions">
+        <button type="button" id="deleteCancelBtn" class="button">Cancelar</button>
+        <button type="button" id="deleteConfirmBtn" class="row-remove-btn">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="copyModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="copyModalTitle">
+    <div class="modal">
+      <h3 id="copyModalTitle">Copiar archivo</h3>
+      <p>
+        Crearás una copia nueva a partir de
+        <strong id="copySourceFileName">este archivo</strong>.
+      </p>
+      <div class="modal-form-group">
+        <label for="copyFileNameInput">Nuevo nombre del archivo</label>
+        <input type="text" id="copyFileNameInput" placeholder="Escribe el nuevo nombre" autocomplete="off" />
+      </div>
+      <p id="copyModalError" class="modal-error hidden"></p>
+      <div class="modal-actions">
+        <button type="button" id="copyCancelBtn" class="button">Cancelar</button>
+        <button type="button" id="copyConfirmBtn" class="button">Crear copia</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="../js/file-admin.js"></script>
+</body>
+
+</html>

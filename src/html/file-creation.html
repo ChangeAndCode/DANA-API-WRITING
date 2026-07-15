@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Creación de archivos de Archivos</title>
+  <link rel="stylesheet" href="../css/main.css" />
+  <link rel="stylesheet" href="../css/file-conversion.css" />
+</head>
+
+<body>
+  <div class="container">
+    <h1>Creación de Archivos API</h1>
+
+    <div class="form-group">
+      <label for="fileType" style="font-weight: bold;">Tipo de Archivo a Crear:</label>
+      <select id="fileType" style="margin-top: 10px;">
+        <option value="">-- Seleccione el tipo --</option>
+        <option value="finishedProduct">Finished Product</option>
+        <option value="rawMaterial">Raw Material</option>
+        <option value="billOfMaterials">Bill of Materials</option>
+        <option value="splScrap">Packing List (SPL/Scrap)</option>
+      </select>
+    </div>
+
+    <div id="adminFileNameGroup" class="form-group hidden">
+      <label for="adminFileName" style="font-weight: bold;">Nombre para administracion:</label>
+      <input type="text" id="adminFileName" style="margin-top: 10px;" maxlength="80"
+        placeholder="Ej. FP_2026-03-24_Lote1" />
+    </div>
+
+    <div id="format-finishedProduct" class="format-section hidden">
+      <div class="table-actions">
+        <button type="button" id="fpAddRowBtn">Agregar fila</button>
+      </div>
+      <div class="table-wrapper">
+        <table id="fpTable" class="data-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="format-rawMaterial" class="format-section hidden">
+      <div class="table-actions">
+        <button type="button" id="rmAddRowBtn">Agregar fila</button>
+      </div>
+      <div class="table-wrapper">
+        <table id="rmTable" class="data-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="format-billOfMaterials" class="format-section hidden">
+      <div class="table-actions">
+        <button type="button" id="bmAddRowBtn">Agregar fila</button>
+      </div>
+      <div class="table-wrapper">
+        <table id="bmTable" class="data-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="format-splScrap" class="format-section hidden">
+      <h2>Datos del Embarque</h2>
+      <div id="splMetaFields" class="meta-grid"></div>
+
+      <h2>Partidas</h2>
+      <div class="table-actions">
+        <button type="button" id="splAddRowBtn">Agregar fila</button>
+      </div>
+      <div class="table-wrapper">
+        <table id="splTable" class="data-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="creation-actions-row">
+      <button id="createFileButton">
+        <span class="btn-text">Crear Archivo</span>
+        <span class="spinner hidden"></span>
+      </button>
+      <button id="updateFileButton" class="hidden">
+        <span class="btn-text">Actualizar Archivo</span>
+        <span class="spinner hidden"></span>
+      </button>
+      <a id="adminFilesButton" class="button" href="file-admin.html">
+        <span class="btn-text">Administrar Archivos</span>
+      </a>
+    </div>
+
+    <div id="validationResult" class="conversion-result hidden"></div>
+    <div class="dashboard-nav">
+      <a href="/auth/dashboard" class="button">Volver al Dashboard</a>
+    </div>
+  </div>
+  <script type="module" src="../js/file-creation.js"></script>
+</body>
+
+</html>
