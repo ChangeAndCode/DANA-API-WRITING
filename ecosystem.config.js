@@ -2,7 +2,7 @@
 module.exports = {
   apps: [
     {
-      name: "DANA-api-writing",
+      name: "dana-api-writing",
       script: "./index.js",
       instances: 1,
       exec_mode: "fork",
