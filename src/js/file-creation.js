@@ -1,6 +1,8 @@
 const fileType = document.getElementById("fileType");
 const sections = document.querySelectorAll(".format-section");
 const createFileButton = document.getElementById("createFileButton");
+const importFileButton = document.getElementById("importFileButton");
+const importFileInput = document.getElementById("importFileInput");
 const updateFileButton = document.getElementById("updateFileButton");
 const validationResult = document.getElementById("validationResult");
 const adminFileNameGroup = document.getElementById("adminFileNameGroup");
@@ -2238,6 +2240,176 @@ function resetValidationResult() {
   validationResult.innerHTML = "";
 }
 
+function isAllowedImportFile(fileName) {
+  const lowerName = String(fileName || "").toLowerCase();
+  return [".xlsx", ".xls",".xlsm", ".csv", ".txt"].some((ext) =>
+    lowerName.endsWith(ext),
+  );
+}
+
+function renderImportSelectionNotice(fileName, documentType) {
+  if (!validationResult) return;
+
+  validationResult.classList.remove("hidden", "success", "error", "warning");
+  validationResult.classList.add("warning");
+  validationResult.innerHTML = "";
+
+  const h4 = document.createElement("h4");
+  h4.textContent = "Archivo seleccionado";
+
+  const p1 = document.createElement("p");
+  p1.textContent = `Archivo: ${fileName}`;
+
+  const p2 = document.createElement("p");
+  p2.textContent = `Tipo destino: ${getDocumentTypeLabel(documentType)}`;
+
+  const p3 = document.createElement("p");
+  p3.textContent =
+    "Siguiente paso: enviarlo al backend para cargarlo dentro del editor.";
+
+  validationResult.append(h4, p1, p2, p3);
+}
+
+function applyImportedRowsToEditor(documentType, rows = []) {
+  if (!fileType) return;
+
+  fileType.value = documentType;
+  showFormat(documentType);
+
+  if (documentType === "finishedProduct") {
+    setFinishedProductRows(rows);
+    return;
+  }
+
+  if (documentType === "rawMaterial") {
+    setRawMaterialRows(rows);
+    return;
+  }
+
+  if (documentType === "billOfMaterials") {
+    setBillOfMaterialsRows(rows);
+    return;
+  }
+
+  if (documentType === "splScrap") {
+    setSplScrapRows(rows);
+  }
+}
+
+async function startManualImport() {
+  const selectedFile = importFileInput?.files?.[0];
+  if (!selectedFile) return;
+
+  if (!fileType || !fileType.value) {
+    renderErrorList([
+      {
+        message:
+          "Selecciona primero el tipo de archivo antes de cargar un archivo.",
+      },
+    ]);
+    importFileInput.value = "";
+    return;
+  }
+
+  if (!isAllowedImportFile(selectedFile.name)) {
+    renderErrorList([
+      {
+        message: "Solo se permiten archivos .xlsm, .xlsx, .xls, .csv o .txt.",
+      },
+    ]);
+    importFileInput.value = "";
+    return;
+  }
+
+  const spinner = importFileButton
+    ? importFileButton.querySelector(".spinner")
+    : null;
+  const buttonText = importFileButton
+    ? importFileButton.querySelector(".btn-text")
+    : null;
+
+  if (importFileButton) importFileButton.disabled = true;
+  if (spinner) spinner.classList.remove("hidden");
+  if (buttonText) buttonText.classList.add("hidden");
+
+  try {
+    resetValidationResult();
+    renderImportSelectionNotice(selectedFile.name, fileType.value);
+
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    formData.append("documentType", fileType.value);
+
+    const response = await fetch("/api/files/import-manual", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.message || "No se pudo importar el archivo.");
+    }
+
+    const importedRows = Array.isArray(data.rows) ? data.rows : [];
+    if (!importedRows.length) {
+      throw new Error(
+        "El archivo no contiene filas utilizables para cargar en el editor.",
+      );
+    }
+
+    applyImportedRowsToEditor(data.documentType || fileType.value, importedRows);
+
+    editingFileId = "";
+    if (createFileButton) createFileButton.classList.remove("hidden");
+    if (updateFileButton) updateFileButton.classList.add("hidden");
+
+    if (adminFileNameInput && data.suggestedAdminFileName) {
+      adminFileNameInput.value = data.suggestedAdminFileName;
+    }
+
+    if (data.hasErrors) {
+      renderErrorList(
+        data.errors || [{ message: "El archivo se cargo con observaciones." }],
+        "Archivo cargado con observaciones",
+      );
+    } else if (validationResult) {
+      validationResult.classList.remove(
+        "hidden",
+        "success",
+        "error",
+        "warning",
+      );
+      validationResult.classList.add("success");
+      validationResult.innerHTML = "";
+
+      const h4 = document.createElement("h4");
+      h4.textContent = "Archivo cargado";
+
+      const p1 = document.createElement("p");
+      p1.textContent = `Archivo: ${data.fileName || selectedFile.name}`;
+
+      const p2 = document.createElement("p");
+      p2.textContent = `Filas cargadas: ${importedRows.length}`;
+
+      const p3 = document.createElement("p");
+      p3.textContent =
+        "Los datos ya estan en el editor. Revisa la informacion y luego crea el archivo.";
+
+      validationResult.append(h4, p1, p2, p3);
+    }
+  } catch (error) {
+    renderErrorList([
+      { message: error.message || "Error al importar el archivo." },
+    ]);
+  } finally {
+    if (importFileButton) importFileButton.disabled = false;
+    if (spinner) spinner.classList.add("hidden");
+    if (buttonText) buttonText.classList.remove("hidden");
+    if (importFileInput) importFileInput.value = "";
+  }
+}
+
 function getDocumentTypeLabel(documentType) {
   return DOCUMENT_TYPE_LABELS[documentType] || documentType || "-";
 }
@@ -2585,6 +2757,31 @@ if (createFileButton) {
     renderErrorList([
       { message: "Este tipo a\u00fan no est\u00e1 disponible." },
     ]);
+  });
+}
+
+if (importFileButton) {
+  importFileButton.addEventListener("click", () => {
+    if (!fileType || !fileType.value) {
+      renderErrorList([
+        {
+          message:
+            "Selecciona primero el tipo de archivo que vas a cargar.",
+        },
+      ]);
+      return;
+    }
+
+    if (importFileInput) {
+      importFileInput.value = "";
+      importFileInput.click();
+    }
+  });
+}
+
+if (importFileInput) {
+  importFileInput.addEventListener("change", async () => {
+    await startManualImport();
   });
 }
 

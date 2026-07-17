@@ -15,6 +15,7 @@ const RawMaterial = require("../models/RawMaterial");
 const SPLScrap = require("../models/SPLScrap");
 const { getUOMOptions } = require("../data/uomCatalog");
 const { getCountryOptions } = require("../data/countryCatalog");
+const { convertXlsToXlsx } = require("../utils/xlsConverter");
 
 // Middleware de Multer (configúralo una vez)
 const multer = require("multer");
@@ -484,6 +485,79 @@ const getManualCatalogOptions = async (_req, res) => {
   }
 };
 
+const importManualFile = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      message: "No se ha proporcionado ningun archivo.",
+    });
+  }
+
+  const { documentType } = req.body || {};
+  if (!documentType) {
+    await fs.unlink(req.file.path).catch(() => {});
+    return res.status(400).json({
+      message: "documentType es requerido.",
+    });
+  }
+
+  if (!isSupportedAdminFileType(documentType)) {
+    await fs.unlink(req.file.path).catch(() => {});
+    return res.status(400).json({
+      message: ADMIN_FILE_TYPES_ERROR_MESSAGE,
+    });
+  }
+
+  const tempFilePath = req.file.path;
+  const originalName = req.file.originalname || "imported-file";
+  const originalExtension = path.extname(originalName).toLowerCase();
+
+  let readPath = tempFilePath;
+  let effectiveName = originalName;
+  let convertedTempPath = null;
+
+  try {
+    if (originalExtension === ".xls") {
+      convertedTempPath = await convertXlsToXlsx(tempFilePath);
+      readPath = convertedTempPath;
+      effectiveName = `${path.parse(originalName).name}.xlsx`;
+    }
+
+    const fileBuffer = await fs.readFile(readPath);
+
+    const importResult = await fileConversionService.prepareManualImportFromFile(
+      fileBuffer,
+      effectiveName,
+      documentType
+    );
+
+    const rows = Array.isArray(importResult.rows) ? importResult.rows : [];
+    const suggestedAdminFileName = path.parse(originalName).name;
+
+    return res.status(200).json({
+      message: importResult.hasErrors
+        ? "Archivo cargado con observaciones."
+        : "Archivo cargado correctamente.",
+      documentType,
+      rows,
+      errors: importResult.errors || [],
+      hasErrors: !!importResult.hasErrors,
+      fileName: originalName,
+      suggestedAdminFileName,
+    });
+  } catch (error) {
+    console.error("Error al importar archivo manual:", error);
+    return res.status(500).json({
+      message: "Error al importar el archivo.",
+      error: error.message,
+    });
+  } finally {
+    await fs.unlink(tempFilePath).catch(() => {});
+    if (convertedTempPath && convertedTempPath !== tempFilePath) {
+      await fs.unlink(convertedTempPath).catch(() => {});
+    }
+  }
+};
+
 const createManualFile = async (req, res) => {
   const { documentType, rows, outputFormat, displayName } = req.body || {};
   const normalizedName = normalizeAdminFileName(displayName);
@@ -905,4 +979,5 @@ module.exports = {
   copyAdminFileById,
   updateAdminFileById,
   deleteAdminFileById,
+  importManualFile,
 };

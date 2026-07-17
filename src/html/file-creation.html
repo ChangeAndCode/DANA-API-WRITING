@@ -87,10 +87,24 @@
         <span class="btn-text">Crear Archivo</span>
         <span class="spinner hidden"></span>
       </button>
+
+      <button type="button" id="importFileButton">
+        <span class="btn-text">Cargar Archivo</span>
+        <span class="spinner hidden"></span>
+      </button>
+
+      <input
+        type="file"
+        id="importFileInput"
+        accept=".xlsm,.xlsx,.xls,.csv,.txt"
+        class="hidden"
+      />
+
       <button id="updateFileButton" class="hidden">
         <span class="btn-text">Actualizar Archivo</span>
         <span class="spinner hidden"></span>
       </button>
+
       <a id="adminFilesButton" class="button" href="file-admin.html">
         <span class="btn-text">Administrar Archivos</span>
       </a>

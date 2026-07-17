@@ -171,6 +171,54 @@ const validateManualRowsForDocument = async (
   );
 };
 
+const prepareManualImportFromFile = async (
+  fileBuffer,
+  originalName,
+  documentType
+) => {
+  if (!documentType) {
+    throw new Error("Document type is required for manual import.");
+  }
+
+  const fileExtension = path.extname(originalName).toLowerCase();
+  let parsedData;
+
+  switch (fileExtension) {
+    case ".xlsx":
+    case ".xlsm":
+      parsedData = await parseXLSX(fileBuffer, documentType);
+      break;
+    case ".csv":
+      parsedData = await parseCSV(fileBuffer, documentType);
+      break;
+    case ".txt":
+      parsedData = await parseTXT(fileBuffer, documentType);
+      break;
+    default:
+      throw new Error(`Unsupported import file format: ${fileExtension}.`);
+  }
+
+  const validationResult = await validateParsedDataForDocument(
+    parsedData,
+    documentType,
+    normalizeManualValidationOptions(documentType, {
+      allowEmptyMandatoryFields: false,
+    })
+  );
+
+  const transformedRows = Array.isArray(
+    validationResult.transformedData?.Sheet1
+  )
+    ? validationResult.transformedData.Sheet1
+    : [];
+
+  return {
+    rows: transformedRows,
+    errors: validationResult.errors,
+    hasErrors: validationResult.hasErrors,
+  };
+};
+
 // Service that encapsulates file conversion logic
 const processFileForConversion = async (
   fileBuffer,
@@ -572,4 +620,5 @@ module.exports = {
   processManualDataForConversion,
   validateManualRowsForDocument,
   generateOutputFileNameForDocument,
+  prepareManualImportFromFile,
 };
