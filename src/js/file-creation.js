@@ -1002,9 +1002,143 @@ function validateCatalogInputsForDocumentType(documentType) {
   return false;
 }
 
+function getTableBodyForDocumentType(documentType) {
+  if (documentType === "finishedProduct") return fpBody;
+  if (documentType === "rawMaterial") return rmBody;
+  if (documentType === "billOfMaterials") return bmBody;
+  if (documentType === "splScrap") return splBody;  
+  return null;
+}
+
+function getColumnsForDocumentType(documentType) {
+  if (documentType === "finishedProduct") return finishedProductColumns;
+  if (documentType === "rawMaterial") return rawMaterialColumns;
+  if (documentType === "billOfMaterials") return billOfMaterialsColumns;
+  if (documentType === "splScrap") return splScrapColumns;
+  return [];
+}
+
+function addRowForDocumentType(documentType, values = {}) {
+  if (documentType === "finishedProduct") return addFinishedProductRow(values);
+  if (documentType === "rawMaterial") return addRawMaterialRow(values);
+  if (documentType === "billOfMaterials") return addBillOfMaterialsRow(values);
+  if (documentType === "splScrap") return addSplScrapRow(values);
+}
+
+function parseClipboardGrid(text) {
+  const normalized = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+  const rows = normalized.split("\n").map((row) => row.split("\t"));
+
+  while (rows.length && rows[rows.length - 1].every((cell) => cell === "")) {
+    rows.pop();
+  }
+
+  return rows;
+}
+
+function getRowEditorsForDocumentType(rowElement) {
+  if (!rowElement) return [];
+  return Array.from(rowElement.querySelectorAll("input, select"));
+}
+
+function isPasteableColumn(column, editor) {
+  if (!column || !editor) return false;
+  if (editor.tagName === "SELECT") return false;
+  if (editor.readOnly) return false;
+  if (column.derived) return false;
+  if (Array.isArray(column.options)) return false;
+  if (editor.dataset.catalogKey) return false;
+  return true;
+}
+
+function ensureRowsForPaste(documentType, requiredRowIndex) {
+  const tbody = getTableBodyForDocumentType(documentType);
+  if (!tbody) return [];
+
+  while (tbody.children.length <= requiredRowIndex) {
+    addRowForDocumentType(documentType);
+  }
+
+  return Array.from(tbody.querySelectorAll("tr"));
+}
+
+function setEditorValue(editor, value) {
+  if (!editor) return;
+  editor.value = value == null ? "" : String(value);
+  editor.dispatchEvent(new Event("input", { bubbles: true }));
+  editor.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function handleTablePaste(event, documentType) {
+  const target = event.target;
+  if (!target) return;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  const rowElement = target.closest("tr");
+  if (!rowElement) return;
+
+  const tbody = getTableBodyForDocumentType(documentType);
+  const columns = getColumnsForDocumentType(documentType);
+  if (!tbody || !columns.length) return;
+
+  const clipboardText = event.clipboardData?.getData("text/plain") || "";
+  const grid = parseClipboardGrid(clipboardText);
+  if (!grid.length) return;
+
+  const currentRows = Array.from(tbody.querySelectorAll("tr"));
+  const startRowIndex = currentRows.indexOf(rowElement);
+  const startEditors = getRowEditorsForDocumentType(rowElement);
+  const startColIndex = startEditors.indexOf(target);
+
+  if (startRowIndex < 0 || startColIndex < 0) return;
+
+  event.preventDefault();
+
+  grid.forEach((clipboardRow, rowOffset) => {
+    const targetRowIndex = startRowIndex + rowOffset;
+    const rows = ensureRowsForPaste(documentType, targetRowIndex);
+    const targetRow = rows[targetRowIndex];
+    const targetEditors = getRowEditorsForDocumentType(targetRow);
+
+    clipboardRow.forEach((cellValue, colOffset) => {
+      const targetColIndex = startColIndex + colOffset;
+      const column = columns[targetColIndex];
+      const editor = targetEditors[targetColIndex];
+
+      if (!column || !editor) return;
+      if (!isPasteableColumn(column, editor)) return;
+
+      setEditorValue(editor, cellValue);
+    });
+
+    if (documentType === "splScrap") {
+      updateSplScrapRowComputedFields(targetRow);
+      applySplScrapRowShipmentMode(targetRow, getSplScrapIsScrapMode());
+    }
+  });
+
+  if (documentType === "splScrap") {
+    normalizeSplScrapRowsForShipmentMode(getSplScrapIsScrapMode());
+  }
+}
+
+function bindTablePasteDelegation(tbody, documentType) {
+  if (!tbody || tbody.dataset.pasteBound === "true") return;
+
+  tbody.addEventListener("paste", (event) => {
+    handleTablePaste(event, documentType);
+  });
+
+  tbody.dataset.pasteBound = "true";
+}
+
 function buildFinishedProductTable() {
   if (!fpHead || !fpBody) return;
-
+  bindTablePasteDelegation(fpBody, "finishedProduct");
   fpHead.innerHTML = "";
   const headerRow = document.createElement("tr");
   finishedProductColumns.forEach((col) => {
@@ -1032,7 +1166,7 @@ function buildFinishedProductTable() {
 
 function buildRawMaterialTable() {
   if (!rmHead || !rmBody) return;
-
+  bindTablePasteDelegation(rmBody, "rawMaterial");
   rmHead.innerHTML = "";
   const headerRow = document.createElement("tr");
   rawMaterialColumns.forEach((col) => {
@@ -1390,7 +1524,7 @@ function addRawMaterialRow(values = {}) {
 
 function buildBillOfMaterialsTable() {
   if (!bmHead || !bmBody) return;
-
+  bindTablePasteDelegation(bmBody, "billOfMaterials");
   bmHead.innerHTML = "";
   const headerRow = document.createElement("tr");
   billOfMaterialsColumns.forEach((col) => {
@@ -1827,7 +1961,7 @@ function buildSplScrapMetaFields() {
 
 function buildSplScrapTable() {
   if (!splHead || !splBody) return;
-
+  bindTablePasteDelegation(splBody, "splScrap");
   splHead.innerHTML = "";
   const headerRow = document.createElement("tr");
   splScrapColumns.forEach((col) => {
