@@ -8,6 +8,18 @@ const USER_SITES = [
   { value: 'user2', label: 'Usuario 2' },
 ];
 
+const SAVE_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M5 3h11l3 3v15H5V3zm3 0v6h8V3H8zm0 18v-7h8v7H8z" />
+  </svg>
+`;
+
+const DELETE_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm-1 6h2v8H8V9zm4 0h2v8h-2V9zm4 0h2v8h-2V9zM7 7v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7H7z" />
+  </svg>
+`;
+
 function updateSiteSelectAvailability(userId) {
   const roleSelect = document.getElementById(`role-${userId}`);
   const siteSelect = document.getElementById(`site-${userId}`);
@@ -47,6 +59,7 @@ async function fetchUsers() {
           const roleSelect = document.createElement('select');
           roleSelect.id = `role-${user.id}`;
           roleSelect.dataset.userid = user.id;
+          roleSelect.className = 'user-role-select';
 
           const optionUser = document.createElement('option');
           optionUser.value = 'user';
@@ -66,6 +79,7 @@ async function fetchUsers() {
           const siteSelect = document.createElement('select');
           siteSelect.id = `site-${user.id}`;
           siteSelect.dataset.userid = user.id;
+          siteSelect.className = 'user-site-select';
 
           const emptySiteOption = document.createElement('option');
           emptySiteOption.value = '';
@@ -104,21 +118,24 @@ async function fetchUsers() {
           cellStatus.appendChild(label);
 
           const cellActions = row.insertCell();
+          cellActions.className = 'actions-cell';
 
           const saveBtn = document.createElement('button');
-          saveBtn.className = 'save-btn';
-          saveBtn.textContent = 'Guardar';
+          saveBtn.type = 'button';
+          saveBtn.className = 'save-btn action-btn';
+          saveBtn.innerHTML = `${SAVE_ICON}`;
           saveBtn.dataset.userid = user.id;
           saveBtn.addEventListener('click', () => handleUpdateUser(user.id));
 
-          const deleteBtn = document.createElement('button');
-          deleteBtn.className = 'delete-btn';
-          deleteBtn.textContent = 'Eliminar';
-          deleteBtn.dataset.userid = user.id;
-          deleteBtn.dataset.email = user.email;
-          deleteBtn.addEventListener('click', () =>
-            handleDeleteUser(user.id, user.email),
-          );
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'delete-btn action-btn';
+        deleteBtn.innerHTML = `${DELETE_ICON}`;
+        deleteBtn.dataset.userid = user.id;
+        deleteBtn.dataset.email = user.email;
+        deleteBtn.addEventListener('click', () =>
+          handleDeleteUser(user.id, user.email),
+        );
 
           cellActions.appendChild(saveBtn);
           cellActions.appendChild(deleteBtn);
