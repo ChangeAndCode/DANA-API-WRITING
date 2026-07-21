@@ -1,8 +1,32 @@
-// /src/js/admin-dashboard.js
 import { displayMessage } from './common.js';
 
 const usersTableBody = document.getElementById('usersTableBody');
 const adminMessageElement = document.getElementById('adminMessage');
+
+const USER_SITES = [
+  { value: 'user1', label: 'Usuario 1' },
+  { value: 'user2', label: 'Usuario 2' },
+];
+
+function updateSiteSelectAvailability(userId) {
+  const roleSelect = document.getElementById(`role-${userId}`);
+  const siteSelect = document.getElementById(`site-${userId}`);
+
+  if (!roleSelect || !siteSelect) return;
+
+  const isAdminRole = roleSelect.value === 'admin';
+
+  siteSelect.disabled = isAdminRole;
+
+  if (isAdminRole) {
+    siteSelect.value = '';
+    return;
+  }
+
+  if (!siteSelect.value) {
+    siteSelect.value = USER_SITES[0].value;
+  }
+}
 
 async function fetchUsers() {
   try {
@@ -11,74 +35,98 @@ async function fetchUsers() {
 
     if (response.ok) {
       usersTableBody.innerHTML = '';
+
       if (data.length > 0) {
         data.forEach((user) => {
           const row = usersTableBody.insertRow();
-          
-          // Columna 1: Display Name
+
           const cellName = row.insertCell();
           cellName.textContent = user.displayName || user.email;
-          
-          // Columna 2: Role Select
+
           const cellRole = row.insertCell();
           const roleSelect = document.createElement('select');
           roleSelect.id = `role-${user.id}`;
           roleSelect.dataset.userid = user.id;
-          
+
           const optionUser = document.createElement('option');
           optionUser.value = 'user';
           optionUser.textContent = 'Usuario';
           optionUser.selected = user.role === 'user';
-          
+
           const optionAdmin = document.createElement('option');
           optionAdmin.value = 'admin';
           optionAdmin.textContent = 'Admin';
           optionAdmin.selected = user.role === 'admin';
-          
+
           roleSelect.appendChild(optionUser);
           roleSelect.appendChild(optionAdmin);
           cellRole.appendChild(roleSelect);
-          
-          // Columna 3: Active Status
+
+          const cellSite = row.insertCell();
+          const siteSelect = document.createElement('select');
+          siteSelect.id = `site-${user.id}`;
+          siteSelect.dataset.userid = user.id;
+
+          const emptySiteOption = document.createElement('option');
+          emptySiteOption.value = '';
+          emptySiteOption.textContent = 'Sin sede';
+          siteSelect.appendChild(emptySiteOption);
+
+          USER_SITES.forEach((site) => {
+            const option = document.createElement('option');
+            option.value = site.value;
+            option.textContent = site.label;
+            option.selected = user.site === site.value;
+            siteSelect.appendChild(option);
+          });
+
+          siteSelect.value = user.site || '';
+          cellSite.appendChild(siteSelect);
+
+          roleSelect.addEventListener('change', () => {
+            updateSiteSelectAvailability(user.id);
+          });
+          updateSiteSelectAvailability(user.id);
+
           const cellStatus = row.insertCell();
           const checkbox = document.createElement('input');
           checkbox.type = 'checkbox';
           checkbox.id = `isActive-${user.id}`;
           checkbox.dataset.userid = user.id;
           checkbox.checked = user.isActive;
-          
+
           const label = document.createElement('label');
           label.htmlFor = `isActive-${user.id}`;
           label.className = user.isActive ? 'status-active' : 'status-inactive';
           label.textContent = user.isActive ? 'Activo' : 'Inactivo';
-          
+
           cellStatus.appendChild(checkbox);
           cellStatus.appendChild(label);
-          
-          // Columna 4: Botones de acción
+
           const cellActions = row.insertCell();
-          
+
           const saveBtn = document.createElement('button');
           saveBtn.className = 'save-btn';
           saveBtn.textContent = 'Guardar';
           saveBtn.dataset.userid = user.id;
           saveBtn.addEventListener('click', () => handleUpdateUser(user.id));
-          
+
           const deleteBtn = document.createElement('button');
           deleteBtn.className = 'delete-btn';
           deleteBtn.textContent = 'Eliminar';
           deleteBtn.dataset.userid = user.id;
           deleteBtn.dataset.email = user.email;
-          deleteBtn.addEventListener('click', () => handleDeleteUser(user.id, user.email));
-          
+          deleteBtn.addEventListener('click', () =>
+            handleDeleteUser(user.id, user.email),
+          );
+
           cellActions.appendChild(saveBtn);
           cellActions.appendChild(deleteBtn);
         });
       } else {
-        // Usar DOM API en lugar de innerHTML para consistencia
         const row = usersTableBody.insertRow();
         const cell = row.insertCell();
-        cell.colSpan = 4;
+        cell.colSpan = 5;
         cell.className = 'no-users';
         cell.textContent = 'No hay usuarios registrados.';
       }
@@ -89,6 +137,7 @@ async function fetchUsers() {
         data.message || 'Error al cargar usuarios.',
         'error',
       );
+
       if (response.status === 403 || response.status === 401) {
         setTimeout(() => {
           window.location.href = '/auth/dashboard';
@@ -105,12 +154,13 @@ async function fetchUsers() {
   }
 }
 
-// Función para actualizar usuario
 async function handleUpdateUser(userId) {
   const roleSelect = document.getElementById(`role-${userId}`);
+  const siteSelect = document.getElementById(`site-${userId}`);
   const isActiveCheckbox = document.getElementById(`isActive-${userId}`);
 
   const newRole = roleSelect.value;
+  const newSite = siteSelect ? siteSelect.value : '';
   const newIsActive = isActiveCheckbox.checked;
 
   try {
@@ -122,6 +172,7 @@ async function handleUpdateUser(userId) {
       body: JSON.stringify({
         isActive: newIsActive,
         role: newRole,
+        site: newSite,
       }),
     });
 
@@ -143,9 +194,10 @@ async function handleUpdateUser(userId) {
   }
 }
 
-// Función para eliminar usuario
 async function handleDeleteUser(userId, userEmail) {
-  const confirmDelete = confirm(`¿Estás seguro de eliminar al usuario "${userEmail}"? Esta acción no se puede deshacer.`);
+  const confirmDelete = confirm(
+    `¿Estás seguro de eliminar al usuario "${userEmail}"? Esta acción no se puede deshacer.`,
+  );
   if (!confirmDelete) return;
 
   try {

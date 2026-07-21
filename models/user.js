@@ -27,6 +27,14 @@ const userSchema = new mongoose.Schema({
     enum: ['user', 'admin'],
     default: 'user',
   },
+  site: {
+    type: String,
+    enum: ['user1', 'user2'],
+    required: function () {
+      return this.role !== 'admin';
+    },
+    index: true,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

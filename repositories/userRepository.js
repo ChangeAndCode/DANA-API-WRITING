@@ -1,5 +1,10 @@
 // repositories/userRepository.js
 const User = require('../models/user');
+const DEFAULT_USER_SITE = 'user1';
+
+const normalizeUserSite = (site) => {
+  return typeof site === 'string' ? site.trim() : '';
+};
 
 const findUserById = async (id) => {
   return await User.findById(id);
@@ -9,15 +14,20 @@ const findUserByEmail = async (email) => { // Función clave para la estrategia 
   return await User.findOne({ email });
 };
 
-const findOrCreateUserByGoogleId = async (profile) => {
+const findOrCreateUserByGoogleId = async (
+  profile,
+  site = DEFAULT_USER_SITE,
+  ) => {
   let user = await User.findOne({ googleId: profile.id });
   if (!user) {
+    const normalizedSite = normalizeUserSite(site) || DEFAULT_USER_SITE;
     user = await User.create({
       googleId: profile.id,
       displayName: profile.displayName,
       email: profile.emails[0].value,
       isActive: false,
       role: 'user',
+      site: normalizedSite,
     });
   }
   return user;
@@ -26,9 +36,14 @@ const findUserByGoogleId = async (googleId) => {
   return await User.findOne({ googleId });
 };
 // Nueva función para crear o buscar usuario con email/password
-const findOrCreateUserByEmailPassword = async (email, password) => {
+const findOrCreateUserByEmailPassword = async (
+  email,
+  password,
+  site = DEFAULT_USER_SITE,
+  ) => {
   let user = await User.findOne({ email });
   if (!user) {
+    const normalizedSite = normalizeUserSite(site) || DEFAULT_USER_SITE;
     // Si no existe, se registra
     user = await User.create({
       email,
@@ -36,13 +51,29 @@ const findOrCreateUserByEmailPassword = async (email, password) => {
       displayName: email.split('@')[0], // Un display name por defecto
       isActive: false, // Por defecto, inactivo
       role: 'user',
+      site: normalizedSite,
     });
   }
   return user;
 };
 
-const updateUserAccess = async (userId, isActive, role) => {
-  return await User.findByIdAndUpdate(userId, { isActive, role }, { new: true });
+const updateUserAccess = async (userId, isActive, role, site) => {
+  const user = await User.findById(userId);
+  if (!user) return null;
+
+  user.isActive = isActive;
+  user.role = role;
+
+  if (role === 'admin') {
+    user.site = undefined;
+  } else if (site) {
+    user.site = normalizeUserSite(site);
+  } else if (!user.site) {
+    user.site = DEFAULT_USER_SITE;
+  }
+
+  await user.save();
+  return user;
 };
 
 const deleteUserById = async (userId, session = null) => {
