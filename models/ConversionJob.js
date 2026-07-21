@@ -9,6 +9,11 @@ const conversionJobSchema = new mongoose.Schema({
     // Only required if not isAutomated, but Mongoose doesn't support complex 'required' logic
     // Best practice is to make it not required here, and handle validation in the service/controller
   },
+  site: {
+    type: String,
+    enum: ['user1', 'user2'],
+    index: true,
+  },
   fileName: {
     type: String,
     required: true,

@@ -273,6 +273,7 @@ rawMaterialSchemaSpec.forEach((field) => {
 rawMaterialMongooseSchema.add({
   adminFileName: { type: String, trim: true },
   lastDownloadedName: { type: String, trim: true },
+  site: { type: String, enum: ["user1", "user2"], index: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   sourceJobId: { type: mongoose.Schema.Types.ObjectId, ref: "ConversionJob" },

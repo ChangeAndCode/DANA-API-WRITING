@@ -56,10 +56,74 @@ const requireAdminFileModelByType = (type) => {
 const normalizeAdminFileName = (value) =>
   typeof value === "string" ? value.trim() : "";
 
+const VALID_USER_SITES = ["user1", "user2"];
+
+const normalizeUserSite = (value) =>
+  typeof value === "string" ? value.trim() : "";
+
+const isAdminUser = (user) =>
+  !!(user && (user.isAdmin || user.role === "admin"));
+
+const getScopedUserSite = (user) => {
+  const normalizedSite = normalizeUserSite(user?.site);
+  return VALID_USER_SITES.includes(normalizedSite) ? normalizedSite : "";
+};
+
+const buildAdminFileQueryForUser = (user) => {
+  if (isAdminUser(user)) return {};
+
+  const userSite = getScopedUserSite(user);
+  if (userSite) {
+    return { site: userSite };
+  }
+
+  return { createdBy: user?.id };
+};
+
+const resolveDocumentSiteForWrite = (user, fallbackSite = "") => {
+  const userSite = getScopedUserSite(user);
+  if (userSite) return userSite;
+
+  const normalizedFallbackSite = normalizeUserSite(fallbackSite);
+  return VALID_USER_SITES.includes(normalizedFallbackSite)
+    ? normalizedFallbackSite
+    : "";
+};
+
+const assertUserCanAccessConversionJob = (
+  job,
+  user,
+  automatedMessage = "Acceso denegado."
+) => {
+  if (!job.userId && job.isAutomated) {
+    if (!isAdminUser(user)) {
+      throw createHttpError(403, automatedMessage);
+    }
+    return;
+  }
+
+  if (isAdminUser(user)) return;
+
+  const userSite = getScopedUserSite(user);
+  const jobSite = normalizeUserSite(job?.site);
+
+  if (userSite && jobSite) {
+    if (userSite !== jobSite) {
+      throw createHttpError(403, "Acceso denegado.");
+    }
+    return;
+  }
+
+  if (job.userId && job.userId.toString() !== user.id.toString()) {
+    throw createHttpError(403, "Acceso denegado.");
+  }
+};
+
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const findExistingAdminFileByName = async (name, options = {}) => {
   const normalizedName = normalizeAdminFileName(name);
+  const scopedSite = normalizeUserSite(options.site);
   if (!normalizedName) return null;
 
   const checks = VALID_ADMIN_FILE_TYPES.map(async (type) => {
@@ -71,6 +135,10 @@ const findExistingAdminFileByName = async (name, options = {}) => {
       },
     };
 
+    if (scopedSite) {
+      query.site = scopedSite;
+    }
+
     if (
       options.exclude &&
       options.exclude.type === type &&
@@ -80,7 +148,11 @@ const findExistingAdminFileByName = async (name, options = {}) => {
       query._id = { $ne: options.exclude.id };
     }
 
-    const document = await model.findOne(query).select("_id adminFileName").lean();
+    const document = await model
+      .findOne(query)
+      .select("_id adminFileName site")
+      .lean();
+
     return document ? { type, document } : null;
   });
 
@@ -107,8 +179,19 @@ const assertAdminFileNameAvailable = async (name, options = {}) => {
 };
 
 const assertUserCanAccessAdminFile = (doc, user) => {
-  const isAdmin = user && (user.isAdmin || user.role === "admin");
-  if (!isAdmin && String(doc.createdBy || "") !== String(user?.id || "")) {
+  if (isAdminUser(user)) return;
+
+  const userSite = getScopedUserSite(user);
+  const documentSite = normalizeUserSite(doc?.site);
+
+  if (userSite && documentSite) {
+    if (userSite !== documentSite) {
+      throw createHttpError(403, "Acceso denegado.");
+    }
+    return;
+  }
+
+  if (String(doc.createdBy || "") !== String(user?.id || "")) {
     throw createHttpError(403, "Acceso denegado.");
   }
 };
@@ -159,14 +242,18 @@ const createAdminFileDocument = async ({
   documentType,
   adminFileName,
   lastDownloadedName,
+  site,
   userId,
   sourceJobId,
   rows,
 }) => {
   const model = requireAdminFileModelByType(documentType);
+  const resolvedSite = normalizeUserSite(site);
+
   const savedDoc = await model.create({
     adminFileName: normalizeAdminFileName(adminFileName) || undefined,
     lastDownloadedName: normalizeAdminFileName(lastDownloadedName) || undefined,
+    site: resolvedSite || undefined,
     createdBy: userId,
     updatedBy: userId,
     sourceJobId: sourceJobId || undefined,
@@ -199,6 +286,7 @@ const uploadAndConvertFile = async (req, res) => {
 
   const { path: tempFilePath, originalname } = req.file;
   const { outputFormat, ...conversionOptions } = req.body;
+  const requestUserSite = getScopedUserSite(req.user);
   let fileBuffer;
 
   try {
@@ -274,6 +362,7 @@ const uploadAndConvertFile = async (req, res) => {
   try {
     newJob = await conversionJobRepository.createConversionJob({
       userId: req.user.id,
+      site: requestUserSite || undefined,
       fileName: originalname,
       originalFilePath: tempFilePath,
       outputFormat: outputFormat,
@@ -291,6 +380,8 @@ const uploadAndConvertFile = async (req, res) => {
         req.user.id,
         false
       );
+
+    
 
     await conversionJobRepository.updateConversionJobStatus(newJob._id, status, {
       convertedFilePath,
@@ -345,14 +436,15 @@ const getConvertedFile = async (req, res) => {
     }
 
     // Authorization checks
-    if (job.userId && job.userId.toString() !== req.user.id.toString()) {
-      return res
-        .status(403)
-        .json({ message: "Acceso denegado. No tienes permisos para este archivo." });
-    }
-    if (!job.userId && job.isAutomated && !req.user.isAdmin) {
-      return res.status(403).json({
-        message: "Acceso denegado. Este es un archivo de conversión automatizado.",
+    try {
+      assertUserCanAccessConversionJob(
+        job,
+        req.user,
+        "Acceso denegado. Este es un archivo de conversión automatizado."
+      );
+    } catch (accessError) {
+      return res.status(accessError.statusCode || 403).json({
+        message: accessError.message,
       });
     }
 
@@ -415,12 +507,15 @@ const getErrorReport = async (req, res) => {
     }
 
     // Authorization checks
-    if (job.userId && job.userId.toString() !== req.user.id.toString()) {
-      return res.status(403).json({ message: "Acceso denegado." });
-    }
-    if (!job.userId && job.isAutomated && !req.user.isAdmin) {
-      return res.status(403).json({
-        message: "Acceso denegado. Este es un reporte de errores automatizado.",
+    try {
+      assertUserCanAccessConversionJob(
+        job,
+        req.user,
+        "Acceso denegado. Este es un reporte de errores automatizado."
+      );
+    } catch (accessError) {
+      return res.status(accessError.statusCode || 403).json({
+        message: accessError.message,
       });
     }
 
@@ -561,6 +656,7 @@ const importManualFile = async (req, res) => {
 const createManualFile = async (req, res) => {
   const { documentType, rows, outputFormat, displayName } = req.body || {};
   const normalizedName = normalizeAdminFileName(displayName);
+  const requestUserSite = getScopedUserSite(req.user);
 
   if (!documentType) {
     return res.status(400).json({ message: "documentType es requerido." });
@@ -593,11 +689,14 @@ const createManualFile = async (req, res) => {
   let newJob;
   try {
     if (normalizedName) {
-      await assertAdminFileNameAvailable(normalizedName);
+      await assertAdminFileNameAvailable(normalizedName, {
+        site: requestUserSite || undefined,
+      });
     }
 
     newJob = await conversionJobRepository.createConversionJob({
       userId: req.user.id,
+      site: requestUserSite || undefined,
       fileName: `manual-${documentType}.${finalOutputFormat}`,
       originalFilePath: `manual-${documentType}`,
       outputFormat: finalOutputFormat,
@@ -608,6 +707,7 @@ const createManualFile = async (req, res) => {
       status: "processing",
       isAutomated: false,
     });
+    
 
     const {
       convertedFilePath,
@@ -639,11 +739,15 @@ const createManualFile = async (req, res) => {
     if (status === "completed") {
       const rowsToSave = Array.isArray(transformedRows) ? transformedRows : [];
       if (rowsToSave.length > 0) {
-        await assertAdminFileNameAvailable(resolvedAdminFileName);
+        await assertAdminFileNameAvailable(resolvedAdminFileName, {
+          site: requestUserSite || undefined,
+        });
+
         const result = await createAdminFileDocument({
           documentType,
           adminFileName: resolvedAdminFileName,
           lastDownloadedName: lastDownloadedName || undefined,
+          site: requestUserSite || undefined,
           userId: req.user.id,
           sourceJobId: newJob._id,
           rows: rowsToSave,
@@ -705,12 +809,11 @@ const getAdminFilesByType = async (req, res) => {
 
   try {
     const model = requireAdminFileModelByType(type);
-    const isAdmin = req.user && (req.user.isAdmin || req.user.role === "admin");
-    const query = isAdmin ? {} : { createdBy: req.user.id };
+    const query = buildAdminFileQueryForUser(req.user);
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
 
     const selectFields =
-      "adminFileName lastDownloadedName createdBy updatedBy createdAt updatedAt";
+      "adminFileName lastDownloadedName site createdBy updatedBy createdAt updatedAt";
     const docs = await model
       .find(query)
       .sort({ updatedAt: -1, createdAt: -1 })
@@ -825,6 +928,7 @@ const copyAdminFileById = async (req, res) => {
   const { type } = req.query || {};
   const { displayName } = req.body || {};
   const normalizedName = normalizeAdminFileName(displayName);
+  
 
   if (!normalizedName) {
     return res.status(400).json({
@@ -839,14 +943,19 @@ const copyAdminFileById = async (req, res) => {
       type,
       user: req.user,
     });
+    const targetSite = resolveDocumentSiteForWrite(req.user, doc.site);
 
-    await assertAdminFileNameAvailable(normalizedName);
+    await assertAdminFileNameAvailable(normalizedName, {
+      site: targetSite || undefined,
+    });
     const nextNomenclature = generateAdminFileNomenclature(type, doc.rows);
+    
 
     const result = await createAdminFileDocument({
       documentType: type,
       adminFileName: normalizedName,
       lastDownloadedName: nextNomenclature,
+      site: targetSite || undefined,
       userId: req.user.id,
       rows: doc.rows,
     });
@@ -860,6 +969,7 @@ const copyAdminFileById = async (req, res) => {
         updatedAt: result.savedDoc.updatedAt,
         createdBy: result.savedDoc.createdBy,
         updatedBy: result.savedDoc.updatedBy,
+        site: result.savedDoc.site || "",
       },
     });
   } catch (error) {
@@ -910,7 +1020,9 @@ const updateAdminFileById = async (req, res) => {
 
     const normalizedName = normalizeAdminFileName(displayName);
     const nextAdminFileName = normalizedName || doc.adminFileName || "";
+    const scopedSite = normalizeUserSite(doc.site) || getScopedUserSite(req.user);
     await assertAdminFileNameAvailable(nextAdminFileName, {
+      site: scopedSite || undefined,
       exclude: { type, id },
     });
 

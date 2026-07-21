@@ -1,22 +1,32 @@
 const conversionJobRepository = require("../repositories/conversionJobRepository");
 
+const isAdminUser = (user) => {
+  return !!(user && (user.isAdmin || user.role === "admin"));
+};
+
+const normalizeUserSite = (site) => {
+  return typeof site === "string" ? site.trim() : "";
+};
+
 const getUserConversionJobs = async (req, res) => {
   try {
     const userId = req.user.id;
-    const isAdmin = req.user.isAdmin;
+    const userSite = normalizeUserSite(req.user.site);
 
-    // Parse pagination query params, with defaults
     const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10; // Set a default limit
+    const limit = parseInt(req.query.limit, 10) || 10;
 
     let data;
-    if (isAdmin) {
+    if (isAdminUser(req.user)) {
       data = await conversionJobRepository.getPaginatedAllJobs(page, limit);
     } else {
-      data = await conversionJobRepository.getPaginatedJobsByUserId(
-        userId,
+      data = await conversionJobRepository.getPaginatedJobsForUserScope(
+        {
+          userId,
+          site: userSite || undefined,
+        },
         page,
-        limit
+        limit,
       );
     }
 

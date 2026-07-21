@@ -1,8 +1,13 @@
 const ConversionJob = require("../models/ConversionJob");
 
+const normalizeUserSite = (site) => {
+  return typeof site === "string" ? site.trim() : "";
+};
+
 // createConversionJob and getConversionJobById remain the same...
 const createConversionJob = async ({
   userId,
+  site,
   fileName,
   originalFilePath,
   outputFormat,
@@ -12,6 +17,7 @@ const createConversionJob = async ({
 }) => {
   const newJob = new ConversionJob({
     userId,
+    site,
     fileName,
     originalFilePath,
     outputFormat,
@@ -29,11 +35,27 @@ const getConversionJobById = async (jobId) => {
 /**
  * UPDATED: Finds paginated conversion jobs for a specific user ID.
  */
-const getPaginatedJobsByUserId = async (userId, page = 1, limit = 10) => {
+const getPaginatedJobsForUserScope = async (
+  { userId, site },
+  page = 1,
+  limit = 10,
+) => {
   const skip = (page - 1) * limit;
-  const query = { userId: userId };
+  const normalizedSite = normalizeUserSite(site);
 
-  // Execute queries in parallel for efficiency
+  const query = normalizedSite
+    ? {
+        isAutomated: false,
+        $or: [
+          { site: normalizedSite },
+          { userId: userId, site: { $exists: false } },
+        ],
+      }
+    : {
+        userId: userId,
+        isAutomated: false,
+      };
+
   const [jobs, totalJobs] = await Promise.all([
     ConversionJob.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
     ConversionJob.countDocuments(query),
@@ -130,8 +152,8 @@ module.exports = {
   createConversionJob,
   getConversionJobById,
   updateConversionJobStatus,
-  getPaginatedJobsByUserId, // <-- EXPORT THE PAGINATED FUNCTION
-  getPaginatedAllJobs, // <-- EXPORT THE PAGINATED FUNCTION
+  getPaginatedJobsForUserScope,
+  getPaginatedAllJobs,
   deleteJobsByUserId,
   getLatestAutomatedJobByFileNameAndDocType,
   getLatestAutomatedJobByFileName,
