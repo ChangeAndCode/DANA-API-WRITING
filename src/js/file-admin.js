@@ -1,7 +1,8 @@
-﻿document.addEventListener("DOMContentLoaded", () => {
+﻿document.addEventListener("DOMContentLoaded", async () => {
   const typeSelect = document.getElementById("adminFileType");
   const panel = document.getElementById("adminFilesPanel");
   const tableBody = document.querySelector("#adminFilesTable tbody");
+  const siteColumnHeader = document.getElementById("siteColumnHeader");
   const deleteModal = document.getElementById("deleteModal");
   const deleteConfirmBtn = document.getElementById("deleteConfirmBtn");
   const deleteCancelBtn = document.getElementById("deleteCancelBtn");
@@ -23,6 +24,40 @@
 
   let filesList = [];
   let allFilesList = [];
+  let isAdminViewer = false;
+
+  const SITE_LABELS = {
+    user1: "Usuario 1",
+    user2: "Usuario 2",
+  };
+
+    const getSiteLabel = (site) => {
+    return SITE_LABELS[site] || "Sin sede";
+  };
+
+  const applySiteColumnVisibility = () => {
+    if (!siteColumnHeader) return;
+    siteColumnHeader.classList.toggle("hidden", !isAdminViewer);
+  };
+
+  const loadAdminStatus = async () => {
+    try {
+      const response = await fetch("/auth/check-admin");
+      if (!response.ok) {
+        isAdminViewer = false;
+        applySiteColumnVisibility();
+        return;
+      }
+
+      const data = await response.json();
+      isAdminViewer = !!data.isAdmin;
+      applySiteColumnVisibility();
+    } catch (error) {
+      isAdminViewer = false;
+      applySiteColumnVisibility();
+      console.warn("No se pudo verificar si el usuario es admin.", error);
+    }
+  };
 
   function renderFilteredDocuments(docs) {
     tableBody.innerHTML = "";
@@ -46,6 +81,13 @@
           : "";
       const userLabel = userCache.get(userId) || userId || "N/A";
       userCell.textContent = userLabel;
+
+      let siteCell = null;
+      if (isAdminViewer) {
+        siteCell = document.createElement("td");
+        siteCell.textContent = getSiteLabel(doc.site);
+      }
+
       const actionsCell = document.createElement("td");
       const actionsWrap = document.createElement("div");
       actionsWrap.className = "admin-actions";
@@ -94,6 +136,7 @@
       row.appendChild(nomenclatureCell);
       row.appendChild(updatedCell);
       row.appendChild(userCell);
+      if (siteCell) row.appendChild(siteCell);
       row.appendChild(actionsCell);
       tableBody.appendChild(row);
     });
@@ -340,7 +383,7 @@
     tableBody.innerHTML = "";
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 5;
+    cell.colSpan = isAdminViewer ? 6 : 5;
     cell.className = "no-jobs";
     cell.textContent = message;
     row.appendChild(cell);
@@ -528,6 +571,7 @@
     renderEmpty("Este tipo aun no esta habilitado.");
   };
 
+  await loadAdminStatus();
   panel.classList.remove("hidden");
   renderEmpty("Seleccione un tipo de archivo.");
   loadUsers();
