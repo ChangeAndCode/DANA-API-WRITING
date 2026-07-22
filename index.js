@@ -52,8 +52,8 @@ console.log("DEBUG: MONGO_URI from .env:", process.env.MONGO_URI);
 // --- END TEMPORARY DEBUGGING LINE ---
 
 // 4. Middlewares Globales
-app.use(express.json()); // For parsing application/json bodies
-app.use(express.urlencoded({ extended: true })); // For parsing URL-encoded bodies
+app.use(express.json({ limit: "10mb" })); // For parsing application/json bodies
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));// For parsing URL-encoded bodies
 
 // 5. Configuración de Sesiones con MongoStore
 // This connects Express sessions to your MongoDB database for persistent sessions

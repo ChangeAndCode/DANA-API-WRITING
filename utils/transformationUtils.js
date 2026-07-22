@@ -7,6 +7,45 @@ const { normalizeUOM } = require("../data/uomCatalog");
 // --- HTS helpers ---
 const HTS_FORMATTED_RE = /^\d{4}\.\d{2}\.\d{4}$/; // ####.##.####
 const HTS_10_DIGITS_RE = /^\d{10}$/;
+const CURRENCY_FIELDS = new Set([
+  "Unit Cost (USD)",
+  "Dutiable Value (USD)",
+  "Added Value (USD)",
+  "Unit Value (USD)",
+  "Total Value (USD)",
+]);
+const COUNTRY_OF_ORIGIN_FIELDS = [
+  "Country of Origin",
+  "Country of origin",
+  "FDA Country of Origin",
+];
+const COUNTRY_CODE_ALIASES = new Map([
+  ["USA", "US"],
+  ["UNITEDSTATESOFAMERICA", "US"],
+]);
+
+/**
+ * Removes currency symbols and thousands separators from monetary fields.
+ * Numeric Excel cells are preserved as numbers; text such as "$1,234.50"
+ * becomes "1234.50" so validation and generated files never retain "$".
+ */
+function normalizeCurrencyValue(value) {
+  if (value === null || value === undefined || typeof value === "number") {
+    return value;
+  }
+
+  const raw = String(value).replace(/\u00A0/g, " ").trim();
+  if (raw === "") return "";
+
+  const isParenthesizedNegative = /^\(.*\)$/.test(raw);
+  const normalized = raw
+    .replace(/[\p{Sc}]/gu, "")
+    .replace(/,/g, "")
+    .replace(/\s+/g, "")
+    .replace(/^\((.*)\)$/, "$1");
+
+  return isParenthesizedNegative ? `-${normalized}` : normalized;
+}
 
 /** Recibe cualquier string con o sin puntos y devuelve ####.##.#### (12 chars) */
 function normalizeHTS(value) {
@@ -44,6 +83,10 @@ function isHTSField(fieldName, documentType) {
 function normalizeCountryOfOrigin(value) {
   if (value == null) return value;
   const raw = String(value).trim();
+  const compact = raw.toUpperCase().replace(/[^A-Z]/g, "");
+
+  const aliasedCode = COUNTRY_CODE_ALIASES.get(compact);
+  if (aliasedCode) return aliasedCode;
 
   // If it looks like "MX-Mexico" or "MX / Mexico", take the code part
   const parts = raw.split(/[\s/-]+/).filter(Boolean);
@@ -259,6 +302,10 @@ const applyTransformations = (parsedData, documentType) => {
       // Si el campo no existe o es null/undefined, salta
       if (v === undefined || v === null) return;
 
+      if (CURRENCY_FIELDS.has(fieldName)) {
+        record[fieldName] = normalizeCurrencyValue(v);
+      }
+
       // splScrap: normalize enums / codes
       if (documentType === "splScrap") {
         if (fieldName === "Type of goods") {
@@ -363,17 +410,12 @@ const applyTransformations = (parsedData, documentType) => {
 
     // --- Transformaciones por registro (no atadas a un campo del schema) ---
 
-    // Country of Origin (acepta nombre o código)
-    if (record["Country of Origin"] !== undefined) {
-      record["Country of Origin"] = normalizeCountryOfOrigin(
-        record["Country of Origin"]
-      );
-    }
-    if (record["Country of origin"] !== undefined) {
-      record["Country of origin"] = normalizeCountryOfOrigin(
-        record["Country of origin"]
-      );
-    }
+    // Country of Origin (acepta código ISO2, nombres y alias como USA -> US)
+    COUNTRY_OF_ORIGIN_FIELDS.forEach((fieldName) => {
+      if (record[fieldName] !== undefined) {
+        record[fieldName] = normalizeCountryOfOrigin(record[fieldName]);
+      }
+    });
 
     // Net Cost
     if (record["Net Cost"] !== undefined) {
@@ -414,6 +456,7 @@ const applyTransformations = (parsedData, documentType) => {
 
 module.exports = {
   applyTransformations,
+  normalizeCurrencyValue,
   normalizeHTS,
   normalizeCountryOfOrigin,
   normalizeNetCost,

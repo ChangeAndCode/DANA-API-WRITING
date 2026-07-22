@@ -74,12 +74,13 @@
       const updatedCell = document.createElement("td");
       updatedCell.textContent = formatDate(doc.updatedAt || doc.createdAt);
       const userCell = document.createElement("td");
-      const userId = doc.updatedBy
-        ? String(doc.updatedBy)
-        : doc.createdBy
-          ? String(doc.createdBy)
-          : "";
-      const userLabel = userCache.get(userId) || userId || "N/A";
+      const user = doc.updatedBy || doc.createdBy;
+
+      const userLabel =
+        user?.displayName ||
+        user?.email ||
+        "N/A";
+
       userCell.textContent = userLabel;
 
       let siteCell = null;

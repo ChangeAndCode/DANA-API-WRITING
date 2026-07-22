@@ -819,6 +819,8 @@ const getAdminFilesByType = async (req, res) => {
       .sort({ updatedAt: -1, createdAt: -1 })
       .limit(limit)
       .select(selectFields)
+      .populate("createdBy", "displayName email")
+      .populate("updatedBy", "displayName email")
       .lean();
 
     return res.status(200).json({ documents: docs });
