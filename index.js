@@ -121,6 +121,10 @@ app.get("/auth/dashboard", authenticateRequest, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "dashboard.html"));
 });
 
+app.get("/master-files", authenticateRequest, (req, res) => {
+  res.sendFile(path.join(__dirname, "dist", "master-files.html"));
+});
+
 // File creation page - requires authentication
 app.get("/file-creation", authenticateRequest, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "file-creation.html"));

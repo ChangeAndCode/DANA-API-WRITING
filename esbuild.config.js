@@ -21,6 +21,8 @@ const commonBuildOptions = {
     `${srcdir}/js/file-creation.js`,
     `${srcdir}/js/file-admin.js`,
     `${srcdir}/js/admin-dashboard.js`,
+    `${srcdir}/js/master-files.js`,
+
     `${srcdir}/css/main.css`,
     `${srcdir}/css/login.css`,
     `${srcdir}/css/register.css`,
@@ -29,6 +31,7 @@ const commonBuildOptions = {
     `${srcdir}/css/admin.css`,
     `${srcdir}/css/login-failure.css`,
     `${srcdir}/css/access-pending.css`,
+    `${srcdir}/css/master-files.css`,
   ],
   outdir: outdir,
   // Ensure that .html files don't reference a full path to .js but just 'main.js' or similar

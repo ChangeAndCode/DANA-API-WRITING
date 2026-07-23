@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+
+  <title>Archivos Madre</title>
+
+  <link rel="stylesheet" href="../css/main.css" />
+  <link rel="stylesheet" href="../css/file-conversion.css" />
+  <link rel="stylesheet" href="../css/master-files.css" />
+</head>
+
+<body>
+  <main class="container master-files-container">
+    <header class="page-header">
+      <div>
+        <h1>Archivos Madre</h1>
+
+        <p class="page-description">
+          Administra las fuentes principales utilizadas para consultar
+          información por número de parte.
+        </p>
+      </div>
+
+    </header>
+
+    <!-- Visible únicamente para administradores -->
+    <section id="adminUploadSection" class="panel hidden">
+      <h2>Cargar archivo madre</h2>
+
+      <p>
+        Los administradores pueden cargar archivos nuevos y definir
+        en qué sedes estarán disponibles.
+      </p>
+
+      <div class="form-group">
+        <label for="masterFileInput">Seleccionar archivo</label>
+
+        <input
+          id="masterFileInput"
+          type="file"
+          accept=".xlsx,.xls,.xlsm,.csv,.txt"
+        />
+      </div>
+
+      <fieldset class="site-selector">
+        <legend>Sedes donde se utilizará</legend>
+
+        <label>
+          <input
+            type="checkbox"
+            name="masterFileSites"
+            value="user1"
+          />
+          Sede 1
+        </label>
+
+        <label>
+          <input
+            type="checkbox"
+            name="masterFileSites"
+            value="user2"
+          />
+          Sede 2
+        </label>
+      </fieldset>
+
+      <button id="uploadMasterFileButton" type="button" disabled>
+        Cargar archivo
+      </button>
+
+      <p class="development-note">
+        La carga permanecerá deshabilitada hasta implementar y
+        validar el endpoint del backend.
+      </p>
+    </section>
+
+    <section id="masterFilesPanel" class="admin-files-panel">
+      <div class="section-heading">
+        <div>
+          <h2>Archivos disponibles</h2>
+
+          <p id="scopeMessage">
+            Consultando la sede asignada...
+          </p>
+        </div>
+      </div>
+
+      <h2>Filtros</h2>
+
+      <div
+        class="admin-files-filters"
+        style="
+          margin-bottom: 12px;
+          display: flex;
+          gap: 1%;
+        "
+      >
+        <!-- Filtro por nombre -->
+        <div
+          class="admin-box-filters"
+          style="position: relative;"
+        >
+          <h3>Nombre</h3>
+
+          <input
+            type="text"
+            id="masterFilterName"
+            placeholder="Nombre del archivo madre"
+            style="width: 100%;"
+          />
+        </div>
+
+        <!-- Filtro por fecha -->
+        <div class="admin-box-filters">
+          <h3>Fecha</h3>
+
+          <input
+            type="text"
+            id="masterFilterDate"
+            placeholder="DD/MM/YYYY"
+            style="width: 100%;"
+          />
+        </div>
+
+        <!-- Filtro por usuario -->
+        <div class="admin-box-filters">
+          <h3>Usuario</h3>
+
+          <input
+            type="text"
+            id="masterFilterUser"
+            placeholder="Nombre del usuario"
+            style="width: 100%;"
+          />
+        </div>
+
+        <!-- Filtro por sede -->
+        <div
+          id="masterSiteFilterContainer"
+          class="admin-box-filters hidden"
+        >
+          <h3>Sede</h3>
+
+          <select
+            id="masterFilterSite"
+            style="width: 100%;"
+          >
+            <option value="">Todas las sedes</option>
+            <option value="user1">Sede 1</option>
+            <option value="user2">Sede 2</option>
+          </select>
+        </div>
+
+        <!-- Botón para limpiar los filtros -->
+        <div class="admin-box-filters">
+          <div class="div-separacion"></div>
+
+          <button
+            type="button"
+            id="masterResetFiltersButton"
+            class="button-reset"
+            title="Resetear filtros"
+            style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              height: 44px;
+              width: 48px;
+              min-width: 48px;
+              max-width: 48px;
+              padding: 0;
+              box-shadow: none;
+            "
+          >
+            <img
+              class="img-filter"
+              src="/src/icons/filtrar.png"
+              alt="Resetear filtros"
+              style="
+                width: 28px;
+                height: 28px;
+                display: block;
+                margin: auto;
+              "
+            />
+          </button>
+        </div>
+      </div>
+
+      <!-- Mensaje cuando todavía no hay documentos -->
+      <div id="masterFilesEmptyState" class="empty-state">
+        <h3>Aún no hay archivos madre disponibles</h3>
+
+        <p>
+          Cuando implementemos la carga, aquí aparecerán los archivos
+          correspondientes a la sede del usuario.
+        </p>
+      </div>
+
+      <!-- Tabla de archivos madre -->
+      <div
+        id="masterFilesTableWrapper"
+        class="table-wrapper hidden"
+      >
+        <table
+          id="masterFilesTable"
+          class="data-table"
+        >
+          <thead>
+            <tr>
+              <th style="position: relative;">
+                Nombre
+
+                <button
+                  type="button"
+                  id="masterSortNameButton"
+                  class="sort-btn"
+                  title="Ordenar alfabéticamente"
+                  style="
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    border: none;
+                    padding: 0;
+                    margin: 0;
+                    box-shadow: none;
+                    cursor: pointer;
+                  "
+                >
+                  <img
+                    id="masterSortNameIcon"
+                    src="/src/icons/ordenar-flechas-par-apuntando-hacia-arriba-y-hacia-abajo.png"
+                    alt="Ordenar"
+                    style="
+                      width: 18px;
+                      height: 18px;
+                      display: block;
+                    "
+                  />
+                </button>
+              </th>
+
+              <th>Última actualización</th>
+
+              <th>Por Usuario</th>
+
+              <th
+                id="masterSiteColumnHeader"
+                class="hidden"
+              >
+                Sede
+              </th>
+
+              <th>Acciones</th>
+            </tr>
+          </thead>
+
+          <tbody id="masterFilesTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <p id="masterFilesMessage" class="message"></p>
+
+    <nav class="dashboard-nav">
+      <a href="/auth/dashboard" class="api-link">
+        Regresar al dashboard
+      </a>
+
+      <a href="/file-creation" class="api-link">
+        Crear archivo
+      </a>
+
+      <button
+        type="button"
+        class="logout-btn"
+        onclick="window.location.href='/auth/logout'"
+      >
+        Cerrar sesión
+      </button>
+    </nav>
+  </main>
+
+  <script type="module" src="../js/master-files.js"></script>
+</body>
+</html>
