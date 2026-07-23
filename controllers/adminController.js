@@ -2,7 +2,7 @@ const userRepository = require('../repositories/userRepository');
 const mongoose = require('mongoose');
 
 const VALID_USER_ROLES = ['user', 'admin'];
-const VALID_USER_SITES = ['user1', 'user2'];
+const VALID_USER_SITES = ['gaiim', 'p1a'];
 
 const normalizeUserSite = (site) => {
   return typeof site === 'string' ? site.trim() : '';

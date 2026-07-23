@@ -4,8 +4,8 @@ const usersTableBody = document.getElementById('usersTableBody');
 const adminMessageElement = document.getElementById('adminMessage');
 
 const USER_SITES = [
-  { value: 'user1', label: 'Usuario 1' },
-  { value: 'user2', label: 'Usuario 2' },
+  { value: 'gaiim', label: 'GAIIM' },
+  { value: 'p1a', label: 'P1A' },
 ];
 
 const SAVE_ICON = `

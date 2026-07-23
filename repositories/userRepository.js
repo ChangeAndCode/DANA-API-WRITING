@@ -1,6 +1,6 @@
 // repositories/userRepository.js
 const User = require('../models/user');
-const DEFAULT_USER_SITE = 'user1';
+const DEFAULT_USER_SITE = 'gaiim';
 
 const normalizeUserSite = (site) => {
   return typeof site === 'string' ? site.trim() : '';

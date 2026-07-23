@@ -56,7 +56,7 @@ const requireAdminFileModelByType = (type) => {
 const normalizeAdminFileName = (value) =>
   typeof value === "string" ? value.trim() : "";
 
-const VALID_USER_SITES = ["user1", "user2"];
+const VALID_USER_SITES = ["gaiim", "p1a"];
 
 const normalizeUserSite = (value) =>
   typeof value === "string" ? value.trim() : "";

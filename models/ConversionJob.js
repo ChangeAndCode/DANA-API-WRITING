@@ -11,7 +11,7 @@ const conversionJobSchema = new mongoose.Schema({
   },
   site: {
     type: String,
-    enum: ['user1', 'user2'],
+    enum: ['gaiim', 'p1a'],
     index: true,
   },
   fileName: {

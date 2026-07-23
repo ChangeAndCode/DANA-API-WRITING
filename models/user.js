@@ -29,7 +29,7 @@ const userSchema = new mongoose.Schema({
   },
   site: {
     type: String,
-    enum: ['user1', 'user2'],
+    enum: ['gaiim', 'p1a'],
     required: function () {
       return this.role !== 'admin';
     },

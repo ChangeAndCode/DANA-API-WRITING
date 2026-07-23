@@ -27,8 +27,8 @@
   let isAdminViewer = false;
 
   const SITE_LABELS = {
-    user1: "Usuario 1",
-    user2: "Usuario 2",
+    gaiim: "GAIIM",
+    p1a: "P1A",
   };
 
     const getSiteLabel = (site) => {

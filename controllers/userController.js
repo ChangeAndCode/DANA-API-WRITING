@@ -20,6 +20,7 @@ const getUserProfile = async (req, res) => {
       email: user.email,
       isActive: user.isActive,
       role: user.role,
+      site: user.site || "",
       googleId: user.googleId, // Se envía para saber si está vinculado
       passwordSet: !!user.password, // Devuelve true si la contraseña existe
       createdAt: user.createdAt,
