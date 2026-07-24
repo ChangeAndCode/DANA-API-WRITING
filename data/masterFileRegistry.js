@@ -48,8 +48,9 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
   },
 
   unitnetweightg: {
-    target: "unitWeightLb",
-    transform: "gramsToPounds",
+    target: "unitNetWeight",
+    transform: "number",
+    sourceUnit: "g",
   },
 
   materialcostusd: {
@@ -245,6 +246,11 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
     target: "clientComments",
     transform: "text",
   },
+
+  unnamedcolumnak: {
+    target: "frontRear",
+    transform: "uppercaseText",
+  },
 });
 
 /**
@@ -272,23 +278,27 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
   },
 
   unitnetweightkgs: {
-    target: "unitWeightLb",
-    transform: "kilogramsToPounds",
+    target: "unitNetWeight",
+    transform: "number",
+    sourceUnit: "kg",
   },
 
   unitnetweightkg: {
-    target: "unitWeightLb",
-    transform: "kilogramsToPounds",
+    target: "unitNetWeight",
+    transform: "number",
+    sourceUnit: "kg",
   },
 
   unitnetweightlbs: {
-    target: "unitWeightLb",
-    transform: "pounds",
+    target: "unitNetWeight",
+    transform: "number",
+    sourceUnit: "lb",
   },
 
   unitnetweightlb: {
-    target: "unitWeightLb",
-    transform: "pounds",
+    target: "unitNetWeight",
+    transform: "number",
+    sourceUnit: "lb",
   },
 
   unitvalueusd: {
@@ -307,8 +317,8 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
   },
 
   uom: {
-    target: "unitOfMeasure",
-    transform: "uom",
+    target: "uom",
+    transform: "text",
   },
 
   countryoforigin: {
@@ -390,6 +400,7 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
     target: "clientComments",
     transform: "text",
   },
+
 });
 
 /**

@@ -106,8 +106,15 @@ const normalizedValuesSchema = new mongoose.Schema(
       default: "",
     },
 
-    unitWeightLb: {
+    unitNetWeight: {
       type: Number,
+    },
+
+    unitNetWeightSourceUnit: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      enum: ["g", "kg", "lb"],
     },
 
     materialCostUsd: {
@@ -134,6 +141,12 @@ const normalizedValuesSchema = new mongoose.Schema(
       type: String,
       trim: true,
       uppercase: true,
+      default: "",
+    },
+    
+    uom: {
+      type: String,
+      trim: true,
       default: "",
     },
 
@@ -273,6 +286,13 @@ const normalizedValuesSchema = new mongoose.Schema(
     clientComments: {
       type: String,
       trim: true,
+      default: "",
+    },
+
+    frontRear: {
+      type: String,
+      trim: true,
+      uppercase: true,
       default: "",
     },
   },

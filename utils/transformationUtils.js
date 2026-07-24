@@ -22,6 +22,11 @@ const COUNTRY_OF_ORIGIN_FIELDS = [
 const COUNTRY_CODE_ALIASES = new Map([
   ["USA", "US"],
   ["UNITEDSTATESOFAMERICA", "US"],
+
+  ["GERMANY", "DE"],
+  ["ROMANIA", "RO"],
+  ["TURKEY", "TR"],
+  ["DEVELOPLOCALLYINMEXICO", "MX"],
 ]);
 
 /**
