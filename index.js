@@ -20,6 +20,9 @@ const fileRoutes = require("./routes/fileRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const userRoutes = require("./routes/userRoutes");
 const jobRoutes = require("./routes/jobRoutes");
+const masterFileRoutes = require(
+  "./routes/masterFileRoutes"
+);
 // Import authentication/authorization middleware (assuming these exist from version 2)
 const {
   authenticateRequest,
@@ -167,6 +170,11 @@ app.use("/api/user", authenticateRequest, userRoutes);
 // API routes for administrator actions (e.g., managing users)
 // Applying authenticateRequest and ensureAdmin middleware as in version 2
 app.use("/api/admin", authenticateRequest, ensureAdmin, adminRoutes);
+
+app.use(
+  "/api/master-files",
+  masterFileRoutes,
+);
 
 // 9. Manejo de errores global
 // This should be the last middleware in your chain to catch 404s and server errors.
