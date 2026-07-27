@@ -45,6 +45,18 @@ router.post(
 );
 
 /**
+ * GET /api/master-files/:masterFileId/download
+ *
+ * Administradores: cualquier archivo.
+ * Usuarios: solamente archivos asignados a su sede.
+ */
+router.get(
+  "/:masterFileId/download",
+  USER_PROTECTED,
+  masterFileController.downloadMasterFile,
+);
+
+/**
  * DELETE /api/master-files/:masterFileId
  *
  * Solamente un administrador activo puede eliminar

@@ -63,6 +63,30 @@ let uploadInProgress = false;
 let availableMasterFiles = [];
 let pendingMasterFileDelete = null;
 
+const MASTER_DOWNLOAD_ICON = `
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M10 4v8" />
+    <path d="M10 12l-4-4" />
+    <path d="M10 12l4-4" />
+    <rect
+      x="4"
+      y="16"
+      width="12"
+      height="2"
+      rx="1"
+    />
+  </svg>
+`;
+
 const MASTER_DELETE_ICON = `
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -294,24 +318,65 @@ const renderMasterFiles = () => {
       const actionsCell =
         document.createElement("td");
 
+      const actionsWrapper =
+        document.createElement("div");
+
+      actionsWrapper.className =
+        "admin-actions";
+
+      const downloadButton =
+        document.createElement("button");
+
+      downloadButton.type = "button";
+
+      downloadButton.className =
+        "admin-action-btn download-btn";
+
+      downloadButton.title =
+        "Descargar archivo madre";
+
+      downloadButton.setAttribute(
+        "aria-label",
+        `Descargar ${
+          masterFile.name ||
+          masterFile.originalFileName ||
+          "archivo madre"
+        }`,
+      );
+
+      downloadButton.innerHTML =
+        MASTER_DOWNLOAD_ICON;
+
+      downloadButton.addEventListener(
+        "click",
+        () => {
+          if (!masterFile.id) {
+            showMessage(
+              "El archivo madre no tiene un identificador válido.",
+              "error",
+            );
+
+            return;
+          }
+
+          window.location.href =
+            `/api/master-files/${encodeURIComponent(
+              masterFile.id,
+            )}/download`;
+        },
+      );
+
+      actionsWrapper.appendChild(
+        downloadButton,
+      );
       if (isAdmin) {
-        const actionsWrapper =
-          document.createElement("div");
-
-        actionsWrapper.className =
-          "admin-actions";
-
         const deleteButton =
           document.createElement("button");
-
         deleteButton.type = "button";
-
         deleteButton.className =
           "admin-action-btn delete-btn";
-
         deleteButton.title =
           "Eliminar archivo madre";
-
         deleteButton.setAttribute(
           "aria-label",
           `Eliminar ${
@@ -320,10 +385,8 @@ const renderMasterFiles = () => {
             "archivo madre"
           }`,
         );
-
         deleteButton.innerHTML =
           MASTER_DELETE_ICON;
-
         deleteButton.addEventListener(
           "click",
           () => {
@@ -332,20 +395,14 @@ const renderMasterFiles = () => {
             );
           },
         );
-
         actionsWrapper.appendChild(
           deleteButton,
         );
-
-        actionsCell.appendChild(
-          actionsWrapper,
-        );
-      } else {
-        actionsCell.textContent = "—";
       }
-
+      actionsCell.appendChild(
+        actionsWrapper,
+      );
       row.appendChild(actionsCell);
-
       masterFilesTableBody.appendChild(
         row,
       );

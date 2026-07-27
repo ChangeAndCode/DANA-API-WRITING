@@ -1,15 +1,17 @@
 // services/masterFileService.js
-
 const path = require("path");
 const mongoose = require("mongoose");
-
 const masterFileRepository = require(
   "../repositories/masterFileRepository"
 );
-
 const {
   parseMasterFileBuffer,
 } = require("../utils/masterFileParser");
+const {
+  createMasterFileWorkbook,
+} = require(
+  "../utils/masterFileExporter"
+);
 
 const VALID_MASTER_SITES = [
   "gaiim",
@@ -420,6 +422,139 @@ const importMasterFile = async ({
 };
 
 /**
+ * Verifica que el usuario pueda consultar el archivo.
+ */
+const assertMasterFileAccess = (
+  masterFile,
+  user,
+) => {
+  if (!user) {
+    throw createMasterServiceError(
+      "MASTER_AUTH_REQUIRED",
+      "Debes iniciar sesión para descargar archivos madre.",
+      401,
+    );
+  }
+
+  if (user.isActive !== true) {
+    throw createMasterServiceError(
+      "MASTER_USER_INACTIVE",
+      "La cuenta no está activa.",
+      403,
+    );
+  }
+
+  if (user.role === "admin") {
+    return;
+  }
+
+  if (user.role !== "user") {
+    throw createMasterServiceError(
+      "MASTER_ROLE_INVALID",
+      "El usuario no tiene un rol válido.",
+      403,
+    );
+  }
+
+  const userSite = String(
+    user.site || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    !VALID_MASTER_SITES.includes(
+      userSite,
+    )
+  ) {
+    throw createMasterServiceError(
+      "MASTER_USER_SITE_REQUIRED",
+      "El usuario no tiene una sede válida asignada.",
+      403,
+    );
+  }
+
+  const masterFileSites =
+    Array.isArray(masterFile.sites)
+      ? masterFile.sites.map((site) =>
+          String(site)
+            .trim()
+            .toLowerCase(),
+        )
+      : [];
+
+  if (
+    !masterFileSites.includes(
+      userSite,
+    )
+  ) {
+    throw createMasterServiceError(
+      "MASTER_FILE_ACCESS_DENIED",
+      "El archivo madre no pertenece a la sede del usuario.",
+      403,
+    );
+  }
+};
+
+/**
+ * Construye la descarga del archivo madre.
+ */
+const downloadMasterFile = async ({
+  masterFileId,
+  user,
+}) => {
+  if (
+    !masterFileId ||
+    !mongoose.Types.ObjectId.isValid(
+      masterFileId,
+    )
+  ) {
+    throw createMasterServiceError(
+      "MASTER_FILE_ID_INVALID",
+      "El identificador del archivo madre no es válido.",
+    );
+  }
+
+  const masterFile =
+    await masterFileRepository
+      .findMasterFileById(
+        masterFileId,
+      );
+
+  if (!masterFile) {
+    throw createMasterServiceError(
+      "MASTER_FILE_NOT_FOUND",
+      "El archivo madre no existe.",
+      404,
+    );
+  }
+
+  assertMasterFileAccess(
+    masterFile,
+    user,
+  );
+
+  if (masterFile.status !== "ready") {
+    throw createMasterServiceError(
+      "MASTER_FILE_NOT_READY",
+      "El archivo madre todavía no está disponible.",
+      409,
+    );
+  }
+
+  const records =
+    await masterFileRepository
+      .findActiveMasterRecordsByMasterFileId(
+        masterFileId,
+      );
+
+  return createMasterFileWorkbook({
+    masterFile,
+    records,
+  });
+};
+
+/**
  * Elimina un archivo madre y todos sus registros.
  *
  * La operación se realiza dentro de una transacción
@@ -517,5 +652,7 @@ module.exports = {
   importMasterFile,
   normalizeMasterSites,
   listMasterFiles,
+  downloadMasterFile,
   deleteMasterFile,
+
 };

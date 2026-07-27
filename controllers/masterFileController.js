@@ -282,6 +282,62 @@ const listMasterFiles = async (
 };
 
 /**
+ * Descarga una reconstrucción del archivo madre
+ * sin imágenes.
+ */
+const downloadMasterFile = async (
+  req,
+  res,
+) => {
+  try {
+    const result =
+      await masterFileService
+        .downloadMasterFile({
+          masterFileId:
+            req.params.masterFileId,
+          user: req.user,
+        });
+
+    res.attachment(
+      result.fileName,
+    );
+
+    res.setHeader(
+      "X-Exported-Record-Count",
+      String(
+        result.exportedRecordCount,
+      ),
+    );
+
+    return res.send(
+      result.buffer,
+    );
+  } catch (error) {
+    const statusCode =
+      Number.isInteger(error.statusCode)
+        ? error.statusCode
+        : 500;
+
+    if (statusCode >= 500) {
+      console.error(
+        "[MasterFiles] Error al descargar:",
+        error,
+      );
+    }
+
+    return res.status(statusCode).json({
+      code:
+        error.code ||
+        "MASTER_DOWNLOAD_ERROR",
+      message:
+        statusCode < 500
+          ? error.message
+          : "Error interno al descargar el archivo madre.",
+    });
+  }
+};
+
+/**
  * Elimina un archivo madre completo.
  */
 const deleteMasterFile = async (
@@ -455,5 +511,6 @@ module.exports = {
   importMasterFile,
   parseSitesField,
   listMasterFiles,
+  downloadMasterFile,
   deleteMasterFile,
 };

@@ -135,6 +135,25 @@ const deleteMasterRecordsByMasterFileId = async (
 };
 
 /**
+ * Recupera los registros activos de un archivo madre
+ * en el orden original de sus filas.
+ */
+const findActiveMasterRecordsByMasterFileId =
+  async (masterFileId) => {
+    return MasterRecord.find({
+      masterFileId,
+      isDeleted: false,
+    })
+      .sort({
+        sourceRow: 1,
+      })
+      .select(
+        "sourceRow rawCells",
+      )
+      .lean();
+  };
+
+/**
  * Elimina la información general del archivo madre.
  */
 const deleteMasterFileById = async (
@@ -156,5 +175,6 @@ module.exports = {
   findMasterFileById,
   findMasterFiles,
   deleteMasterRecordsByMasterFileId,
-  deleteMasterFileById
+  deleteMasterFileById,
+  findActiveMasterRecordsByMasterFileId,
 };
