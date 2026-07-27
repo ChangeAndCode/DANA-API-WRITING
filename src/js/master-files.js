@@ -52,6 +52,9 @@ const masterCopySourceFileName = document.getElementById(
 const masterCopyFileNameInput = document.getElementById(
     "masterCopyFileNameInput",
   );
+const masterCopySiteCheckboxes = document.querySelectorAll(
+  'input[name="masterCopySites"]',
+);
 const masterCopyModalError = document.getElementById(
     "masterCopyModalError",
   );
@@ -257,22 +260,21 @@ const showMasterCopyModalError = (
 
 const closeMasterCopyModal = () => {
   pendingMasterFileCopy = null;
-
   masterCopyModal.classList.add(
     "hidden",
   );
-
   masterCopySourceFileName.textContent =
     "este archivo";
-
   masterCopyFileNameInput.value = "";
-
+  masterCopySiteCheckboxes.forEach(
+    (checkbox) => {
+      checkbox.checked = false;
+    },
+  );
   masterCopyConfirmButton.disabled =
     false;
-
   masterCopyConfirmButton.textContent =
     "Crear copia";
-
   clearMasterCopyModalError();
 };
 
@@ -298,6 +300,23 @@ const openMasterCopyModal = (
 
   masterCopyFileNameInput.value =
     `Copia de ${sourceNameWithoutExtension}`;
+
+  const sourceSites = Array.isArray(
+    masterFile.sites,
+  )
+    ? masterFile.sites.map((site) =>
+        String(site).toLowerCase(),
+      )
+    : [];
+
+  masterCopySiteCheckboxes.forEach(
+    (checkbox) => {
+      checkbox.checked =
+        sourceSites.includes(
+          checkbox.value,
+        );
+    },
+  );
 
   clearMasterCopyModalError();
 
@@ -944,6 +963,24 @@ const confirmMasterFileCopy =
       return;
     }
 
+    const selectedCopySites = [
+      ...masterCopySiteCheckboxes,
+    ]
+      .filter((checkbox) =>
+        checkbox.checked
+      )
+      .map((checkbox) =>
+        checkbox.value
+      );
+
+    if (selectedCopySites.length === 0) {
+      showMasterCopyModalError(
+        "Debes seleccionar al menos una sede.",
+      );
+
+      return;
+    }
+
     if (!sourceMasterFile.id) {
       showMasterCopyModalError(
         "El archivo original no tiene un identificador válido.",
@@ -973,6 +1010,7 @@ const confirmMasterFileCopy =
 
           body: JSON.stringify({
             name: copyName,
+            sites: selectedCopySites,
           }),
         },
       );
@@ -1103,7 +1141,6 @@ document.addEventListener(
       "change",
       handleFileSelection,
     );
-
     masterSiteCheckboxes.forEach(
       (checkbox) => {
         checkbox.addEventListener(
@@ -1112,40 +1149,41 @@ document.addEventListener(
         );
       },
     );
-
     uploadMasterFileButton.addEventListener(
       "click",
       uploadMasterFile,
     );
-
     masterCopyCancelButton.addEventListener(
       "click",
       closeMasterCopyModal,
     );
-
     masterCopyConfirmButton.addEventListener(
       "click",
       confirmMasterFileCopy,
     );
-
     masterCopyFileNameInput.addEventListener(
       "input",
       clearMasterCopyModalError,
     );
 
+    masterCopySiteCheckboxes.forEach(
+      (checkbox) => {
+        checkbox.addEventListener(
+          "change",
+          clearMasterCopyModalError,
+        );
+      },
+    );
     masterCopyFileNameInput.addEventListener(
       "keydown",
       (event) => {
         if (event.key !== "Enter") {
           return;
         }
-
         event.preventDefault();
-
         confirmMasterFileCopy();
       },
     );
-
     masterCopyModal.addEventListener(
       "click",
       (event) => {
@@ -1157,17 +1195,14 @@ document.addEventListener(
         }
       },
     );
-
     masterDeleteCancelButton.addEventListener(
       "click",
       closeMasterDeleteModal,
     );
-
     masterDeleteConfirmButton.addEventListener(
       "click",
       confirmMasterFileDelete,
     );
-
     masterDeleteModal.addEventListener(
       "click",
       (event) => {
@@ -1179,7 +1214,6 @@ document.addEventListener(
         }
       },
     );
-
     document.addEventListener(
       "keydown",
       (event) => {
@@ -1202,7 +1236,6 @@ document.addEventListener(
 
     const userLoaded =
       await loadCurrentUser();
-
     if (userLoaded) {
       await loadMasterFiles();
     }

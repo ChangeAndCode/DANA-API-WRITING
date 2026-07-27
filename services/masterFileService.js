@@ -561,6 +561,7 @@ const downloadMasterFile = async ({
 const copyMasterFile = async ({
   sourceMasterFileId,
   name,
+  sites,
   user,
 }) => {
   const adminUserId =
@@ -591,6 +592,7 @@ const copyMasterFile = async ({
       "El nombre de la copia no puede exceder 150 caracteres.",
     );
   }
+  const copiedSites = normalizeMasterSites(sites);
   const copyExtension = path
     .extname(copyName)
     .toLowerCase();
@@ -634,10 +636,6 @@ const copyMasterFile = async ({
           "function"
             ? sourceMasterFile.toObject()
             : sourceMasterFile;
-        const copiedSites =
-          normalizeMasterSites(
-            sourceData.sites,
-          );
         const sourceRecords =
           await masterFileRepository
             .findActiveMasterRecordsForCopy(

@@ -354,6 +354,9 @@ const copyMasterFile = async (
           name:
             req.body?.name,
 
+          sites:
+            req.body?.sites,
+
           user:
             req.user,
         });
