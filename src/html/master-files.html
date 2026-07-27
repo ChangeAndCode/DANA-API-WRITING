@@ -288,6 +288,46 @@
     </nav>
   </main>
 
+  <div
+    id="masterDeleteModal"
+    class="modal-overlay hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="masterDeleteModalTitle"
+  >
+    <div class="modal">
+      <h3 id="masterDeleteModalTitle">
+        Confirmar eliminación
+      </h3>
+
+      <p>
+        Esta acción eliminará el archivo madre
+        <strong id="masterDeleteFileName">
+          seleccionado
+        </strong>
+        y todos sus registros internos. ¿Deseas continuar?
+      </p>
+
+      <div class="modal-actions">
+        <button
+          type="button"
+          id="masterDeleteCancelButton"
+          class="button"
+        >
+          Cancelar
+        </button>
+
+        <button
+          type="button"
+          id="masterDeleteConfirmButton"
+          class="row-remove-btn"
+        >
+          Eliminar
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="../js/master-files.js"></script>
 </body>
 </html>

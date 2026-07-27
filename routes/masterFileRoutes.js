@@ -44,4 +44,16 @@ router.post(
   masterFileController.importMasterFile,
 );
 
+/**
+ * DELETE /api/master-files/:masterFileId
+ *
+ * Solamente un administrador activo puede eliminar
+ * un archivo madre completo.
+ */
+router.delete(
+  "/:masterFileId",
+  ADMIN_PROTECTED,
+  masterFileController.deleteMasterFile,
+);
+
 module.exports = router;

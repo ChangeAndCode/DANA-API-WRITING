@@ -282,6 +282,57 @@ const listMasterFiles = async (
 };
 
 /**
+ * Elimina un archivo madre completo.
+ */
+const deleteMasterFile = async (
+  req,
+  res,
+) => {
+  try {
+    const result =
+      await masterFileService
+        .deleteMasterFile({
+          masterFileId:
+            req.params.masterFileId,
+          user: req.user,
+        });
+
+    return res.status(200).json({
+      message:
+        "Archivo madre eliminado correctamente.",
+      deletedMasterFile: {
+        id: result.id,
+        name: result.name,
+        deletedRecordCount:
+          result.deletedRecordCount,
+      },
+    });
+  } catch (error) {
+    const statusCode =
+      Number.isInteger(error.statusCode)
+        ? error.statusCode
+        : 500;
+
+    if (statusCode >= 500) {
+      console.error(
+        "[MasterFiles] Error al eliminar:",
+        error,
+      );
+    }
+
+    return res.status(statusCode).json({
+      code:
+        error.code ||
+        "MASTER_DELETE_ERROR",
+      message:
+        statusCode < 500
+          ? error.message
+          : "Error interno al eliminar el archivo madre.",
+    });
+  }
+};
+
+/**
  * Controlador que inicia la importación.
  *
  * Requiere que uploadMasterFile se ejecute antes.
@@ -404,4 +455,5 @@ module.exports = {
   importMasterFile,
   parseSitesField,
   listMasterFiles,
+  deleteMasterFile,
 };

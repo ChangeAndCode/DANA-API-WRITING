@@ -419,8 +419,103 @@ const importMasterFile = async ({
   };
 };
 
+/**
+ * Elimina un archivo madre y todos sus registros.
+ *
+ * La operación se realiza dentro de una transacción
+ * para evitar que queden registros huérfanos.
+ */
+const deleteMasterFile = async ({
+  masterFileId,
+  user,
+}) => {
+  getAdminUserId(user);
+
+  if (
+    !masterFileId ||
+    !mongoose.Types.ObjectId.isValid(
+      masterFileId,
+    )
+  ) {
+    throw createMasterServiceError(
+      "MASTER_FILE_ID_INVALID",
+      "El identificador del archivo madre no es válido.",
+    );
+  }
+
+  const session =
+    await mongoose.startSession();
+
+  let deletionResult = null;
+
+  try {
+    await session.withTransaction(
+      async () => {
+        const masterFile =
+          await masterFileRepository
+            .findMasterFileById(
+              masterFileId,
+              session,
+            );
+
+        if (!masterFile) {
+          throw createMasterServiceError(
+            "MASTER_FILE_NOT_FOUND",
+            "El archivo madre no existe.",
+            404,
+          );
+        }
+
+        const recordsDeletion =
+          await masterFileRepository
+            .deleteMasterRecordsByMasterFileId(
+              masterFileId,
+              session,
+            );
+
+        const fileDeletion =
+          await masterFileRepository
+            .deleteMasterFileById(
+              masterFileId,
+              session,
+            );
+
+        if (
+          fileDeletion.deletedCount !== 1
+        ) {
+          throw createMasterServiceError(
+            "MASTER_FILE_DELETE_FAILED",
+            "No fue posible eliminar el archivo madre.",
+            500,
+          );
+        }
+
+        deletionResult = {
+          id: masterFile._id,
+          name: masterFile.name,
+          deletedRecordCount:
+            recordsDeletion.deletedCount || 0,
+        };
+      },
+    );
+  } finally {
+    await session.endSession();
+  }
+
+  if (!deletionResult) {
+    throw createMasterServiceError(
+      "MASTER_DELETE_NOT_COMPLETED",
+      "La eliminación no pudo completarse.",
+      500,
+    );
+  }
+
+  return deletionResult;
+};
+
 module.exports = {
   importMasterFile,
   normalizeMasterSites,
   listMasterFiles,
+  deleteMasterFile,
 };

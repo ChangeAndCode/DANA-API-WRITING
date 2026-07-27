@@ -42,9 +42,50 @@ const masterFilesTableBody = document.getElementById(
     "masterFilesTableBody",
   );
 
+const masterDeleteModal = document.getElementById(
+    "masterDeleteModal",
+  );
+
+const masterDeleteFileName = document.getElementById(
+    "masterDeleteFileName",
+  );
+
+const masterDeleteCancelButton = document.getElementById(
+    "masterDeleteCancelButton",
+  );
+
+const masterDeleteConfirmButton = document.getElementById(
+    "masterDeleteConfirmButton",
+  );
+
 let currentUser = null;
 let uploadInProgress = false;
 let availableMasterFiles = [];
+let pendingMasterFileDelete = null;
+
+const MASTER_DELETE_ICON = `
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <rect
+      x="3"
+      y="6"
+      width="14"
+      height="11"
+      rx="2"
+    />
+    <path
+      d="M8 9v5m4-5v5M5 6V4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"
+    />
+  </svg>
+`;
 
 const formatSite = (site) => {
   const siteLabels = {
@@ -105,6 +146,41 @@ const formatDate = (value) => {
       timeStyle: "short",
     },
   ).format(date);
+};
+
+const closeMasterDeleteModal = () => {
+    pendingMasterFileDelete = null;
+
+    masterDeleteModal.classList.add(
+      "hidden",
+    );
+
+    masterDeleteFileName.textContent =
+      "seleccionado";
+
+    masterDeleteConfirmButton.disabled =
+      false;
+
+    masterDeleteConfirmButton.textContent =
+      "Eliminar";
+  };
+
+const openMasterDeleteModal = (
+  masterFile,
+) => {
+  pendingMasterFileDelete =
+    masterFile;
+
+  masterDeleteFileName.textContent =
+    masterFile.name ||
+    masterFile.originalFileName ||
+    "seleccionado";
+
+  masterDeleteModal.classList.remove(
+    "hidden",
+  );
+
+  masterDeleteConfirmButton.focus();
 };
 
 const renderMasterFiles = () => {
@@ -218,7 +294,55 @@ const renderMasterFiles = () => {
       const actionsCell =
         document.createElement("td");
 
-      actionsCell.textContent = "—";
+      if (isAdmin) {
+        const actionsWrapper =
+          document.createElement("div");
+
+        actionsWrapper.className =
+          "admin-actions";
+
+        const deleteButton =
+          document.createElement("button");
+
+        deleteButton.type = "button";
+
+        deleteButton.className =
+          "admin-action-btn delete-btn";
+
+        deleteButton.title =
+          "Eliminar archivo madre";
+
+        deleteButton.setAttribute(
+          "aria-label",
+          `Eliminar ${
+            masterFile.name ||
+            masterFile.originalFileName ||
+            "archivo madre"
+          }`,
+        );
+
+        deleteButton.innerHTML =
+          MASTER_DELETE_ICON;
+
+        deleteButton.addEventListener(
+          "click",
+          () => {
+            openMasterDeleteModal(
+              masterFile,
+            );
+          },
+        );
+
+        actionsWrapper.appendChild(
+          deleteButton,
+        );
+
+        actionsCell.appendChild(
+          actionsWrapper,
+        );
+      } else {
+        actionsCell.textContent = "—";
+      }
 
       row.appendChild(actionsCell);
 
@@ -499,7 +623,6 @@ const uploadMasterFile = async () => {
   }
 
   const formData = new FormData();
-
   formData.append(
     "file",
     selectedFile,
@@ -598,6 +721,79 @@ const uploadMasterFile = async () => {
   }
 };
 
+const confirmMasterFileDelete =
+  async () => {
+    if (
+      !pendingMasterFileDelete ||
+      currentUser?.role !== "admin"
+    ) {
+      return;
+    }
+
+    const masterFileToDelete = {
+      ...pendingMasterFileDelete,
+    };
+
+    masterDeleteConfirmButton.disabled =
+      true;
+
+    masterDeleteConfirmButton.textContent =
+      "Eliminando...";
+
+    try {
+      const response = await fetch(
+        `/api/master-files/${encodeURIComponent(
+          masterFileToDelete.id,
+        )}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const data = await response
+        .json()
+        .catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.message ||
+            "No fue posible eliminar el archivo madre.",
+        );
+      }
+
+      closeMasterDeleteModal();
+
+      await loadMasterFiles({
+        showErrors: false,
+      });
+
+      showMessage(
+        [
+          data.message ||
+            "Archivo madre eliminado correctamente.",
+          `Registros eliminados: ${
+            data.deletedMasterFile
+              ?.deletedRecordCount || 0
+          }.`,
+        ].join(" "),
+        "success",
+      );
+    } catch (error) {
+      console.error(
+        "Error al eliminar archivo madre:",
+        error,
+      );
+
+      closeMasterDeleteModal();
+
+      showMessage(
+        error.message ||
+          "No fue posible eliminar el archivo madre.",
+        "error",
+      );
+    }
+  };
+
 document.addEventListener(
   "DOMContentLoaded",
   async () => {
@@ -618,6 +814,41 @@ document.addEventListener(
     uploadMasterFileButton.addEventListener(
       "click",
       uploadMasterFile,
+    );
+
+    masterDeleteCancelButton.addEventListener(
+      "click",
+      closeMasterDeleteModal,
+    );
+
+    masterDeleteConfirmButton.addEventListener(
+      "click",
+      confirmMasterFileDelete,
+    );
+
+    masterDeleteModal.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.target ===
+          masterDeleteModal
+        ) {
+          closeMasterDeleteModal();
+        }
+      },
+    );
+
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (
+          event.key === "Escape" &&
+          !masterDeleteModal.classList
+            .contains("hidden")
+        ) {
+          closeMasterDeleteModal();
+        }
+      },
     );
 
     const userLoaded =

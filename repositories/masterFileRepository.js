@@ -118,6 +118,36 @@ const findMasterFiles = async ({
     .lean();
 };
 
+/**
+ * Elimina todos los registros internos asociados
+ * con un archivo madre.
+ */
+const deleteMasterRecordsByMasterFileId = async (
+  masterFileId,
+  session = null,
+) => {
+  return MasterRecord.deleteMany(
+    {
+      masterFileId,
+    },
+    getSessionOptions(session),
+  );
+};
+
+/**
+ * Elimina la información general del archivo madre.
+ */
+const deleteMasterFileById = async (
+  masterFileId,
+  session = null,
+) => {
+  return MasterFile.deleteOne(
+    {
+      _id: masterFileId,
+    },
+    getSessionOptions(session),
+  );
+};
 
 module.exports = {
   createMasterFile,
@@ -125,4 +155,6 @@ module.exports = {
   updateMasterFileById,
   findMasterFileById,
   findMasterFiles,
+  deleteMasterRecordsByMasterFileId,
+  deleteMasterFileById
 };
