@@ -154,6 +154,39 @@ const findActiveMasterRecordsByMasterFileId =
   };
 
 /**
+ * Recupera toda la información necesaria para copiar
+ * los registros activos de un archivo madre.
+ */
+const findActiveMasterRecordsForCopy =
+  async (
+    masterFileId,
+    session = null,
+  ) => {
+    const query = MasterRecord.find({
+      masterFileId,
+      isDeleted: false,
+    })
+      .sort({
+        sourceRow: 1,
+      })
+      .select([
+        "masterType",
+        "partNumber",
+        "partNumberNormalized",
+        "sourceRow",
+        "rawCells",
+        "normalizedValues",
+        "validationWarnings",
+      ].join(" "));
+
+    if (session) {
+      query.session(session);
+    }
+
+    return query.lean();
+  };
+
+/**
  * Elimina la información general del archivo madre.
  */
 const deleteMasterFileById = async (
@@ -174,7 +207,9 @@ module.exports = {
   updateMasterFileById,
   findMasterFileById,
   findMasterFiles,
+  findActiveMasterRecordsByMasterFileId,
+  findActiveMasterRecordsForCopy,
   deleteMasterRecordsByMasterFileId,
   deleteMasterFileById,
-  findActiveMasterRecordsByMasterFileId,
+
 };

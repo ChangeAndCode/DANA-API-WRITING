@@ -555,6 +555,241 @@ const downloadMasterFile = async ({
 };
 
 /**
+ * Crea una copia independiente de un archivo madre
+ * y de todos sus registros activos.
+ */
+const copyMasterFile = async ({
+  sourceMasterFileId,
+  name,
+  user,
+}) => {
+  const adminUserId =
+    getAdminUserId(user);
+  if (
+    !sourceMasterFileId ||
+    !mongoose.Types.ObjectId.isValid(
+      sourceMasterFileId,
+    )
+  ) {
+    throw createMasterServiceError(
+      "MASTER_FILE_ID_INVALID",
+      "El identificador del archivo madre no es válido.",
+    );
+  }
+  const copyName = String(
+    name || "",
+  ).trim();
+  if (!copyName) {
+    throw createMasterServiceError(
+      "MASTER_COPY_NAME_REQUIRED",
+      "Debes escribir un nombre para la copia.",
+    );
+  }
+  if (copyName.length > 150) {
+    throw createMasterServiceError(
+      "MASTER_COPY_NAME_TOO_LONG",
+      "El nombre de la copia no puede exceder 150 caracteres.",
+    );
+  }
+  const copyExtension = path
+    .extname(copyName)
+    .toLowerCase();
+  const copyOriginalFileName =
+    copyExtension === ".xlsx" ||
+    copyExtension === ".xlsm"
+      ? copyName
+      : `${copyName}.xlsx`;
+  const session =
+    await mongoose.startSession();
+  let copiedMasterFile = null;
+  let copiedRecordCount = 0;
+  try {
+    await session.withTransaction(
+      async () => {
+        const sourceMasterFile =
+          await masterFileRepository
+            .findMasterFileById(
+              sourceMasterFileId,
+              session,
+            );
+        if (!sourceMasterFile) {
+          throw createMasterServiceError(
+            "MASTER_FILE_NOT_FOUND",
+            "El archivo madre original no existe.",
+            404,
+          );
+        }
+        if (
+          sourceMasterFile.status !==
+          "ready"
+        ) {
+          throw createMasterServiceError(
+            "MASTER_FILE_NOT_READY",
+            "El archivo madre original todavía no está disponible.",
+            409,
+          );
+        }
+        const sourceData =
+          typeof sourceMasterFile.toObject ===
+          "function"
+            ? sourceMasterFile.toObject()
+            : sourceMasterFile;
+        const copiedSites =
+          normalizeMasterSites(
+            sourceData.sites,
+          );
+        const sourceRecords =
+          await masterFileRepository
+            .findActiveMasterRecordsForCopy(
+              sourceMasterFileId,
+              session,
+            );
+        const createdMasterFile =
+          await masterFileRepository
+            .createMasterFile(
+              {
+                name: copyName,
+                originalFileName:
+                  copyOriginalFileName,
+                masterType:
+                  sourceData.masterType,
+                sites:
+                  copiedSites,
+                sourceSheet:
+                  sourceData.sourceSheet,
+                headerRow:
+                  sourceData.headerRow,
+                partNumberColumn:
+                  sourceData.partNumberColumn,
+                headers:
+                  sourceData.headers || [],
+                recordCount: 0,
+                imageCountIgnored:
+                  sourceData.imageCountIgnored ||
+                  0,
+                fileSizeBytes:
+                  sourceData.fileSizeBytes ||
+                  0,
+                checksum:
+                  sourceData.checksum || "",
+                status: "processing",
+                warningCount:
+                  sourceData.warningCount ||
+                  0,
+                importWarnings:
+                  sourceData.importWarnings ||
+                  [],
+                revision: 1,
+                uploadedBy:
+                  adminUserId,
+                updatedBy:
+                  adminUserId,
+                lastImportedAt:
+                  new Date(),
+                errorMessage: "",
+              },
+              session,
+            );
+        const copiedRecords =
+          sourceRecords.map(
+            (sourceRecord) => ({
+              masterFileId:
+                createdMasterFile._id,
+              masterType:
+                sourceRecord.masterType,
+              sites:
+                copiedSites,
+              partNumber:
+                sourceRecord.partNumber,
+              partNumberNormalized:
+                sourceRecord
+                  .partNumberNormalized,
+              sourceRow:
+                sourceRecord.sourceRow,
+              rawCells:
+                sourceRecord.rawCells ||
+                [],
+              normalizedValues:
+                sourceRecord
+                  .normalizedValues ||
+                {},
+              validationWarnings:
+                sourceRecord
+                  .validationWarnings ||
+                [],
+              isDeleted: false,
+              createdBy:
+                adminUserId,
+              updatedBy:
+                adminUserId,
+            }),
+          );
+        const insertedRecords =
+          await masterFileRepository
+            .insertMasterRecords(
+              copiedRecords,
+              session,
+            );
+        copiedRecordCount =
+          insertedRecords.length;
+        if (
+          copiedRecordCount !==
+          sourceRecords.length
+        ) {
+          throw createMasterServiceError(
+            "MASTER_COPY_RECORD_COUNT_MISMATCH",
+            "No fue posible copiar todos los registros del archivo madre.",
+            500,
+          );
+        }
+        copiedMasterFile =
+          await masterFileRepository
+            .updateMasterFileById(
+              createdMasterFile._id,
+              {
+                status: "ready",
+
+                recordCount:
+                  copiedRecordCount,
+
+                lastImportedAt:
+                  new Date(),
+
+                updatedBy:
+                  adminUserId,
+              },
+              session,
+            );
+        if (!copiedMasterFile) {
+          throw createMasterServiceError(
+            "MASTER_COPY_UPDATE_FAILED",
+            "No fue posible finalizar la copia del archivo madre.",
+            500,
+          );
+        }
+      },
+    );
+  } finally {
+    await session.endSession();
+  }
+
+  if (!copiedMasterFile) {
+    throw createMasterServiceError(
+      "MASTER_COPY_NOT_COMPLETED",
+      "La copia del archivo madre no pudo completarse.",
+      500,
+    );
+  }
+
+  return {
+    sourceMasterFileId,
+    masterFile:
+      copiedMasterFile,
+    copiedRecordCount,
+  };
+};
+
+/**
  * Elimina un archivo madre y todos sus registros.
  *
  * La operación se realiza dentro de una transacción
@@ -653,6 +888,7 @@ module.exports = {
   normalizeMasterSites,
   listMasterFiles,
   downloadMasterFile,
+  copyMasterFile,
   deleteMasterFile,
 
 };

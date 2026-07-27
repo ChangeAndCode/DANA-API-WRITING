@@ -1,67 +1,72 @@
 const adminUploadSection = document.getElementById(
   "adminUploadSection",
 );
-
 const scopeMessage = document.getElementById(
   "scopeMessage",
 );
-
 const masterSiteColumnHeader = document.getElementById(
   "masterSiteColumnHeader",
 );
-
 const masterSiteFilterContainer = document.getElementById(
   "masterSiteFilterContainer",
 );
-
 const masterFileInput = document.getElementById(
   "masterFileInput",
 );
-
 const uploadMasterFileButton = document.getElementById(
   "uploadMasterFileButton",
 );
-
 const masterFilesMessage = document.getElementById(
   "masterFilesMessage",
 );
-
 const masterSiteCheckboxes = document.querySelectorAll(
   'input[name="masterFileSites"]',
 );
-
 const masterFilesEmptyState = document.getElementById(
     "masterFilesEmptyState",
   );
-
 const masterFilesTableWrapper = document.getElementById(
     "masterFilesTableWrapper",
   );
-
 const masterFilesTableBody = document.getElementById(
     "masterFilesTableBody",
   );
-
 const masterDeleteModal = document.getElementById(
     "masterDeleteModal",
   );
-
 const masterDeleteFileName = document.getElementById(
     "masterDeleteFileName",
   );
-
 const masterDeleteCancelButton = document.getElementById(
     "masterDeleteCancelButton",
   );
-
 const masterDeleteConfirmButton = document.getElementById(
     "masterDeleteConfirmButton",
+  );
+const masterCopyModal = document.getElementById(
+    "masterCopyModal",
+  );
+const masterCopySourceFileName = document.getElementById(
+    "masterCopySourceFileName",
+  );
+const masterCopyFileNameInput = document.getElementById(
+    "masterCopyFileNameInput",
+  );
+const masterCopyModalError = document.getElementById(
+    "masterCopyModalError",
+  );
+const masterCopyCancelButton = document.getElementById(
+    "masterCopyCancelButton",
+  );
+const masterCopyConfirmButton = document.getElementById(
+    "masterCopyConfirmButton",
   );
 
 let currentUser = null;
 let uploadInProgress = false;
 let availableMasterFiles = [];
 let pendingMasterFileDelete = null;
+let pendingMasterFileCopy = null;
 
 const MASTER_DOWNLOAD_ICON = `
   <svg
@@ -86,7 +91,29 @@ const MASTER_DOWNLOAD_ICON = `
     />
   </svg>
 `;
-
+const MASTER_COPY_ICON = `
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <rect
+      x="7"
+      y="3"
+      width="9"
+      height="11"
+      rx="2"
+    />
+    <path
+      d="M5 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-1"
+    />
+  </svg>
+`;
 const MASTER_DELETE_ICON = `
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -205,6 +232,81 @@ const openMasterDeleteModal = (
   );
 
   masterDeleteConfirmButton.focus();
+};
+
+const clearMasterCopyModalError =
+  () => {
+    masterCopyModalError.textContent =
+      "";
+
+    masterCopyModalError.classList.add(
+      "hidden",
+    );
+  };
+
+const showMasterCopyModalError = (
+  message,
+) => {
+  masterCopyModalError.textContent =
+    message;
+
+  masterCopyModalError.classList.remove(
+    "hidden",
+  );
+};
+
+const closeMasterCopyModal = () => {
+  pendingMasterFileCopy = null;
+
+  masterCopyModal.classList.add(
+    "hidden",
+  );
+
+  masterCopySourceFileName.textContent =
+    "este archivo";
+
+  masterCopyFileNameInput.value = "";
+
+  masterCopyConfirmButton.disabled =
+    false;
+
+  masterCopyConfirmButton.textContent =
+    "Crear copia";
+
+  clearMasterCopyModalError();
+};
+
+const openMasterCopyModal = (
+  masterFile,
+) => {
+  pendingMasterFileCopy =
+    masterFile;
+
+  const sourceName =
+    masterFile.name ||
+    masterFile.originalFileName ||
+    "archivo madre";
+
+  masterCopySourceFileName.textContent =
+    sourceName;
+
+  const sourceNameWithoutExtension =
+    sourceName.replace(
+      /\.(xlsx|xlsm)$/i,
+      "",
+    );
+
+  masterCopyFileNameInput.value =
+    `Copia de ${sourceNameWithoutExtension}`;
+
+  clearMasterCopyModalError();
+
+  masterCopyModal.classList.remove(
+    "hidden",
+  );
+
+  masterCopyFileNameInput.focus();
+  masterCopyFileNameInput.select();
 };
 
 const renderMasterFiles = () => {
@@ -370,6 +472,41 @@ const renderMasterFiles = () => {
         downloadButton,
       );
       if (isAdmin) {
+        const copyButton =
+          document.createElement("button");
+
+        copyButton.type = "button";
+
+        copyButton.className =
+          "admin-action-btn copy-btn";
+
+        copyButton.title =
+          "Copiar archivo madre";
+
+        copyButton.setAttribute(
+          "aria-label",
+          `Copiar ${
+            masterFile.name ||
+            masterFile.originalFileName ||
+            "archivo madre"
+          }`,
+        );
+
+        copyButton.innerHTML =
+          MASTER_COPY_ICON;
+
+        copyButton.addEventListener(
+          "click",
+          () => {
+            openMasterCopyModal(
+              masterFile,
+            );
+          },
+        );
+
+        actionsWrapper.appendChild(
+          copyButton,
+        );
         const deleteButton =
           document.createElement("button");
         deleteButton.type = "button";
@@ -778,6 +915,114 @@ const uploadMasterFile = async () => {
   }
 };
 
+const confirmMasterFileCopy =
+  async () => {
+    if (
+      !pendingMasterFileCopy ||
+      currentUser?.role !== "admin" ||
+      masterCopyConfirmButton.disabled
+    ) {
+      return;
+    }
+
+    const sourceMasterFile = {
+      ...pendingMasterFileCopy,
+    };
+
+    const copyName =
+      masterCopyFileNameInput.value
+        .trim();
+
+    clearMasterCopyModalError();
+
+    if (!copyName) {
+      showMasterCopyModalError(
+        "Debes escribir un nombre para la copia.",
+      );
+
+      masterCopyFileNameInput.focus();
+      return;
+    }
+
+    if (!sourceMasterFile.id) {
+      showMasterCopyModalError(
+        "El archivo original no tiene un identificador válido.",
+      );
+
+      return;
+    }
+
+    masterCopyConfirmButton.disabled =
+      true;
+
+    masterCopyConfirmButton.textContent =
+      "Copiando...";
+
+    try {
+      const response = await fetch(
+        `/api/master-files/${encodeURIComponent(
+          sourceMasterFile.id,
+        )}/copy`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            name: copyName,
+          }),
+        },
+      );
+
+      const data = await response
+        .json()
+        .catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.message ||
+            "No fue posible copiar el archivo madre.",
+        );
+      }
+
+      closeMasterCopyModal();
+
+      await loadMasterFiles({
+        showErrors: false,
+      });
+
+      showMessage(
+        [
+          data.message ||
+            "Archivo madre copiado correctamente.",
+          `Registros copiados: ${
+            data.copiedRecordCount || 0
+          }.`,
+        ].join(" "),
+        "success",
+      );
+    } catch (error) {
+      console.error(
+        "Error al copiar archivo madre:",
+        error,
+      );
+
+      showMasterCopyModalError(
+        error.message ||
+          "No fue posible copiar el archivo madre.",
+      );
+    } finally {
+      masterCopyConfirmButton.disabled =
+        false;
+
+      masterCopyConfirmButton.textContent =
+        "Crear copia";
+    }
+  };
+
 const confirmMasterFileDelete =
   async () => {
     if (
@@ -873,6 +1118,46 @@ document.addEventListener(
       uploadMasterFile,
     );
 
+    masterCopyCancelButton.addEventListener(
+      "click",
+      closeMasterCopyModal,
+    );
+
+    masterCopyConfirmButton.addEventListener(
+      "click",
+      confirmMasterFileCopy,
+    );
+
+    masterCopyFileNameInput.addEventListener(
+      "input",
+      clearMasterCopyModalError,
+    );
+
+    masterCopyFileNameInput.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key !== "Enter") {
+          return;
+        }
+
+        event.preventDefault();
+
+        confirmMasterFileCopy();
+      },
+    );
+
+    masterCopyModal.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.target ===
+          masterCopyModal
+        ) {
+          closeMasterCopyModal();
+        }
+      },
+    );
+
     masterDeleteCancelButton.addEventListener(
       "click",
       closeMasterDeleteModal,
@@ -904,6 +1189,13 @@ document.addEventListener(
             .contains("hidden")
         ) {
           closeMasterDeleteModal();
+        }
+        if (
+          event.key === "Escape" &&
+          !masterCopyModal.classList
+            .contains("hidden")
+        ) {
+          closeMasterCopyModal();
         }
       },
     );

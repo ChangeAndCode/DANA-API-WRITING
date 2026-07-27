@@ -328,6 +328,64 @@
     </div>
   </div>
 
+  <div
+    id="masterCopyModal"
+    class="modal-overlay hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="masterCopyModalTitle"
+  >
+    <div class="modal">
+      <h3 id="masterCopyModalTitle">
+        Copiar archivo madre
+      </h3>
+
+      <p>
+        Crearás una copia nueva de
+        <strong id="masterCopySourceFileName">
+          este archivo
+        </strong>.
+      </p>
+
+      <div class="modal-form-group">
+        <label for="masterCopyFileNameInput">
+          Nombre de la copia
+        </label>
+
+        <input
+          type="text"
+          id="masterCopyFileNameInput"
+          placeholder="Escribe el nuevo nombre"
+          maxlength="150"
+          autocomplete="off"
+        />
+      </div>
+
+      <p
+        id="masterCopyModalError"
+        class="modal-error hidden"
+      ></p>
+
+      <div class="modal-actions">
+        <button
+          type="button"
+          id="masterCopyCancelButton"
+          class="button"
+        >
+          Cancelar
+        </button>
+
+        <button
+          type="button"
+          id="masterCopyConfirmButton"
+          class="button"
+        >
+          Crear copia
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="../js/master-files.js"></script>
 </body>
 </html>

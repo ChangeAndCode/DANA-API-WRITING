@@ -338,6 +338,98 @@ const downloadMasterFile = async (
 };
 
 /**
+ * Crea una copia de un archivo madre.
+ */
+const copyMasterFile = async (
+  req,
+  res,
+) => {
+  try {
+    const result =
+      await masterFileService
+        .copyMasterFile({
+          sourceMasterFileId:
+            req.params.masterFileId,
+
+          name:
+            req.body?.name,
+
+          user:
+            req.user,
+        });
+
+    const masterFile =
+      result.masterFile;
+
+    return res.status(201).json({
+      message:
+        "Archivo madre copiado correctamente.",
+
+      masterFile: {
+        id:
+          masterFile._id,
+
+        name:
+          masterFile.name,
+
+        originalFileName:
+          masterFile.originalFileName,
+
+        masterType:
+          masterFile.masterType,
+
+        sites:
+          masterFile.sites,
+
+        status:
+          masterFile.status,
+
+        recordCount:
+          masterFile.recordCount,
+
+        uploadedBy:
+          masterFile.uploadedBy,
+
+        createdAt:
+          masterFile.createdAt,
+
+        lastImportedAt:
+          masterFile.lastImportedAt,
+      },
+
+      copiedRecordCount:
+        result.copiedRecordCount,
+
+      sourceMasterFileId:
+        result.sourceMasterFileId,
+    });
+  } catch (error) {
+    const statusCode =
+      Number.isInteger(error.statusCode)
+        ? error.statusCode
+        : 500;
+
+    if (statusCode >= 500) {
+      console.error(
+        "[MasterFiles] Error al copiar:",
+        error,
+      );
+    }
+
+    return res.status(statusCode).json({
+      code:
+        error.code ||
+        "MASTER_COPY_ERROR",
+
+      message:
+        statusCode < 500
+          ? error.message
+          : "Error interno al copiar el archivo madre.",
+    });
+  }
+};
+
+/**
  * Elimina un archivo madre completo.
  */
 const deleteMasterFile = async (
@@ -512,5 +604,7 @@ module.exports = {
   parseSitesField,
   listMasterFiles,
   downloadMasterFile,
+  copyMasterFile,
   deleteMasterFile,
+
 };

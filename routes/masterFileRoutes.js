@@ -57,6 +57,18 @@ router.get(
 );
 
 /**
+ * POST /api/master-files/:masterFileId/copy
+ *
+ * Sólo administradores activos pueden copiar
+ * archivos madre completos.
+ */
+router.post(
+  "/:masterFileId/copy",
+  ADMIN_PROTECTED,
+  masterFileController.copyMasterFile,
+);
+
+/**
  * DELETE /api/master-files/:masterFileId
  *
  * Solamente un administrador activo puede eliminar
