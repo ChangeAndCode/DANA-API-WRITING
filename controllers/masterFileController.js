@@ -182,6 +182,106 @@ const parseSitesField = (sites) => {
 };
 
 /**
+ * Devuelve los archivos madre visibles para el usuario.
+ */
+const listMasterFiles = async (
+  req,
+  res,
+) => {
+  try {
+    const masterFiles =
+      await masterFileService.listMasterFiles({
+        user: req.user,
+        requestedSite: req.query.site,
+        limit: req.query.limit,
+      });
+
+    return res.status(200).json({
+      masterFiles: masterFiles.map(
+        (masterFile) => ({
+          id: masterFile._id,
+          name: masterFile.name,
+          originalFileName:
+            masterFile.originalFileName,
+          masterType:
+            masterFile.masterType,
+          sites: masterFile.sites,
+          status: masterFile.status,
+          recordCount:
+            masterFile.recordCount,
+          imageCountIgnored:
+            masterFile.imageCountIgnored,
+          warningCount:
+            masterFile.warningCount,
+          uploadedBy:
+            masterFile.uploadedBy
+              ? {
+                  id:
+                    masterFile
+                      .uploadedBy._id,
+                  displayName:
+                    masterFile
+                      .uploadedBy
+                      .displayName ||
+                    masterFile
+                      .uploadedBy.email,
+                  email:
+                    masterFile
+                      .uploadedBy.email,
+                }
+              : null,
+          updatedBy:
+            masterFile.updatedBy
+              ? {
+                  id:
+                    masterFile
+                      .updatedBy._id,
+                  displayName:
+                    masterFile
+                      .updatedBy
+                      .displayName ||
+                    masterFile
+                      .updatedBy.email,
+                  email:
+                    masterFile
+                      .updatedBy.email,
+                }
+              : null,
+          lastImportedAt:
+            masterFile.lastImportedAt,
+          createdAt:
+            masterFile.createdAt,
+          updatedAt:
+            masterFile.updatedAt,
+        }),
+      ),
+    });
+  } catch (error) {
+    const statusCode =
+      Number.isInteger(error.statusCode)
+        ? error.statusCode
+        : 500;
+
+    if (statusCode >= 500) {
+      console.error(
+        "[MasterFiles] Error al listar:",
+        error,
+      );
+    }
+
+    return res.status(statusCode).json({
+      code:
+        error.code ||
+        "MASTER_LIST_ERROR",
+      message:
+        statusCode < 500
+          ? error.message
+          : "Error interno al consultar los archivos madre.",
+    });
+  }
+};
+
+/**
  * Controlador que inicia la importación.
  *
  * Requiere que uploadMasterFile se ejecute antes.
@@ -303,4 +403,5 @@ module.exports = {
   uploadMasterFile,
   importMasterFile,
   parseSitesField,
+  listMasterFiles,
 };

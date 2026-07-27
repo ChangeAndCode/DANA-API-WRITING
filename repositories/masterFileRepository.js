@@ -12,10 +12,6 @@ const getSessionOptions = (session) => {
 
 /**
  * Crea la información general de un archivo madre.
- *
- * Se utiliza un arreglo en Model.create porque Mongoose
- * maneja las sesiones/transacciones de forma consistente
- * cuando create recibe un arreglo de documentos.
  */
 const createMasterFile = async (
   masterFileData,
@@ -31,10 +27,6 @@ const createMasterFile = async (
 
 /**
  * Inserta todos los registros internos de un archivo madre.
- *
- * ordered: true detiene la operación en cuanto encuentra
- * un registro inválido. Si estamos dentro de una transacción,
- * el servicio podrá cancelar toda la carga.
  */
 const insertMasterRecords = async (
   records,
@@ -52,12 +44,6 @@ const insertMasterRecords = async (
 
 /**
  * Actualiza información del archivo madre.
- *
- * Se utilizará para cambiar:
- * processing -> ready
- * processing -> failed
- *
- * También podremos reutilizarlo posteriormente para revisiones.
  */
 const updateMasterFileById = async (
   masterFileId,
@@ -79,9 +65,6 @@ const updateMasterFileById = async (
 
 /**
  * Busca un archivo madre por ID.
- *
- * Posteriormente se utilizará para consultar, editar
- * o eliminar un archivo.
  */
 const findMasterFileById = async (
   masterFileId,
@@ -96,9 +79,50 @@ const findMasterFileById = async (
   return query;
 };
 
+/**
+ * Consulta archivos madre disponibles.
+ */
+const findMasterFiles = async ({
+  filter = {},
+  limit = 200,
+} = {}) => {
+  return MasterFile.find(filter)
+    .sort({
+      lastImportedAt: -1,
+      createdAt: -1,
+    })
+    .limit(limit)
+    .select([
+      "name",
+      "originalFileName",
+      "masterType",
+      "sites",
+      "status",
+      "recordCount",
+      "imageCountIgnored",
+      "warningCount",
+      "uploadedBy",
+      "updatedBy",
+      "lastImportedAt",
+      "createdAt",
+      "updatedAt",
+    ].join(" "))
+    .populate(
+      "uploadedBy",
+      "displayName email",
+    )
+    .populate(
+      "updatedBy",
+      "displayName email",
+    )
+    .lean();
+};
+
+
 module.exports = {
   createMasterFile,
   insertMasterRecords,
   updateMasterFileById,
   findMasterFileById,
+  findMasterFiles,
 };

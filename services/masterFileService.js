@@ -131,10 +131,110 @@ const getAdminUserId = (user) => {
 };
 
 /**
+ * Consulta los archivos disponibles según el usuario.
+ * Administrador:
+ * puede consultar todas las sedes o filtrar una.
+ * Usuario:
+ * solamente puede consultar su sede asignada.
+ */
+const listMasterFiles = async ({
+  user,
+  requestedSite,
+  limit,
+}) => {
+  if (!user) {
+    throw createMasterServiceError(
+      "MASTER_AUTH_REQUIRED",
+      "Debes iniciar sesión para consultar archivos madre.",
+      401,
+    );
+  }
+
+  if (user.isActive !== true) {
+    throw createMasterServiceError(
+      "MASTER_USER_INACTIVE",
+      "La cuenta no está activa.",
+      403,
+    );
+  }
+
+  const filter = {
+    status: "ready",
+  };
+
+  if (user.role === "admin") {
+    const normalizedRequestedSite = String(
+      requestedSite || "",
+    )
+      .trim()
+      .toLowerCase();
+
+    if (
+      normalizedRequestedSite &&
+      !VALID_MASTER_SITES.includes(
+        normalizedRequestedSite,
+      )
+    ) {
+      throw createMasterServiceError(
+        "MASTER_SITE_INVALID",
+        "La sede solicitada no es válida.",
+      );
+    }
+
+    if (normalizedRequestedSite) {
+      filter.sites =
+        normalizedRequestedSite;
+    }
+  } else if (user.role === "user") {
+    const userSite = String(
+      user.site || "",
+    )
+      .trim()
+      .toLowerCase();
+
+    if (
+      !VALID_MASTER_SITES.includes(
+        userSite,
+      )
+    ) {
+      throw createMasterServiceError(
+        "MASTER_USER_SITE_REQUIRED",
+        "El usuario no tiene una sede válida asignada.",
+        403,
+      );
+    }
+
+    filter.sites = userSite;
+  } else {
+    throw createMasterServiceError(
+      "MASTER_ROLE_INVALID",
+      "El usuario no tiene un rol válido.",
+      403,
+    );
+  }
+
+  const parsedLimit = Number.parseInt(
+    limit,
+    10,
+  );
+
+  const safeLimit = Number.isFinite(
+    parsedLimit,
+  )
+    ? Math.min(
+        Math.max(parsedLimit, 1),
+        500,
+      )
+    : 200;
+
+  return masterFileRepository.findMasterFiles({
+    filter,
+    limit: safeLimit,
+  });
+};
+
+/**
  * Importa un archivo madre completo.
- *
- * El parser se ejecuta antes de abrir la transacción.
- * Después, MasterFile y MasterRecord se guardan juntos.
  */
 const importMasterFile = async ({
   fileBuffer,
@@ -322,4 +422,5 @@ const importMasterFile = async ({
 module.exports = {
   importMasterFile,
   normalizeMasterSites,
+  listMasterFiles,
 };

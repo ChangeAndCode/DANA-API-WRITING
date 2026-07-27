@@ -171,6 +171,7 @@ app.use("/api/user", authenticateRequest, userRoutes);
 // Applying authenticateRequest and ensureAdmin middleware as in version 2
 app.use("/api/admin", authenticateRequest, ensureAdmin, adminRoutes);
 
+// administrate master files in admin dashboard
 app.use(
   "/api/master-files",
   masterFileRoutes,

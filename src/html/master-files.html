@@ -43,7 +43,7 @@
         <input
           id="masterFileInput"
           type="file"
-          accept=".xlsx,.xls,.xlsm,.csv,.txt"
+          accept=".xlsx,.xls,.xlsm"
         />
       </div>
 
@@ -74,8 +74,9 @@
       </button>
 
       <p class="development-note">
-        La carga permanecerá deshabilitada hasta implementar y
-        validar el endpoint del backend.
+        Actualmente se procesan archivos .xlsx y .xlsm.
+        La compatibilidad con .xls se habilitará posteriormente
+        mediante conversión con LibreOffice.
       </p>
     </section>
 
@@ -150,7 +151,7 @@
             id="masterFilterSite"
             style="width: 100%;"
           >
-            <option value="">Todas las sedes</option>
+            <option value="">Todas</option>
             <option value="gaiim">GAIIM</option>
             <option value="p1a">P1A</option>
           </select>

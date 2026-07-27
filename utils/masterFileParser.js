@@ -761,7 +761,6 @@ const parseDataRow = (
 
       continue;
     }
-
     setNormalizedValue(
       normalizedValues,
       header.rule.target,
@@ -769,7 +768,6 @@ const parseDataRow = (
       validationWarnings,
       header.originalName,
     );
-
     if (
       header.rule.sourceUnit &&
       transformedValue !== undefined

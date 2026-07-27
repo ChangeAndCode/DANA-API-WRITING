@@ -4,7 +4,6 @@ const bcrypt = require("bcryptjs"); // Necesario para comprobar la existencia de
 
 const getUserProfile = async (req, res) => {
   try {
-    console.log(req.user);
     if (!req.user || !req.user.id) {
       return res.status(401).json({ message: "No autenticado." });
     }

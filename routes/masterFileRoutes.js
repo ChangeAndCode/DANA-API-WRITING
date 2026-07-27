@@ -20,12 +20,23 @@ const ADMIN_PROTECTED = [
   ensureAdmin,
 ];
 
+const USER_PROTECTED = [
+  authenticateRequest,
+  ensureApiAccess,
+];
+
 /**
- * POST /api/master-files
+ * GET /api/master-files
  *
- * Solo administradores activos pueden cargar
- * un archivo madre.
+ * Administradores: todas las sedes.
+ * Usuarios: únicamente su sede asignada.
  */
+router.get(
+  "/",
+  USER_PROTECTED,
+  masterFileController.listMasterFiles,
+);
+
 router.post(
   "/",
   ADMIN_PROTECTED,
