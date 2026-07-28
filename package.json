@@ -1,5 +1,5 @@
 {
-  "name": "conmed-dataconversion",
+  "name": "dana-dataconversion",
   "version": "1.0.0",
   "description": "Minimal API for file conversion between xls ,xlsx ,csv and txt for specific file templates",
   "main": "index.js",
