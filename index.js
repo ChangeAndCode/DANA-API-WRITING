@@ -124,8 +124,13 @@ app.get("/auth/dashboard", authenticateRequest, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "dashboard.html"));
 });
 
+// Master files dashboard page - requires authentication
 app.get("/master-files", authenticateRequest, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "master-files.html"));
+});
+
+app.get("/master-file-editor",authenticateRequest,(req, res) => {
+  res.sendFile(path.join(__dirname,"dist","master-file-editor.html"));
 });
 
 // File creation page - requires authentication

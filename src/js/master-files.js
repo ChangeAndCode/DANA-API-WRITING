@@ -94,6 +94,25 @@ const MASTER_DOWNLOAD_ICON = `
     />
   </svg>
 `;
+
+const MASTER_EDIT_ICON = `
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path
+      d="M3 14.5V17h2.5L16 6.5a1.5 1.5 0 0 0 0-2.1l-.4-.4a1.5 1.5 0 0 0-2.1 0L3 14.5z"
+    />
+    <path d="M12.5 5l2.5 2.5" />
+  </svg>
+`;
+
 const MASTER_COPY_ICON = `
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -117,6 +136,7 @@ const MASTER_COPY_ICON = `
     />
   </svg>
 `;
+
 const MASTER_DELETE_ICON = `
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -490,6 +510,53 @@ const renderMasterFiles = () => {
       actionsWrapper.appendChild(
         downloadButton,
       );
+
+      const editButton =
+        document.createElement("button");
+
+      editButton.type = "button";
+
+      editButton.className =
+        "admin-action-btn update-btn";
+
+      editButton.title =
+        "Editar archivo madre";
+
+      editButton.setAttribute(
+        "aria-label",
+        `Editar ${
+          masterFile.name ||
+          masterFile.originalFileName ||
+          "archivo madre"
+        }`,
+      );
+
+      editButton.innerHTML =
+        MASTER_EDIT_ICON;
+
+      editButton.addEventListener(
+        "click",
+        () => {
+          if (!masterFile.id) {
+            showMessage(
+              "El archivo madre no tiene un identificador válido.",
+              "error",
+            );
+
+            return;
+          }
+
+          window.location.href =
+            `/master-file-editor?edit=${encodeURIComponent(
+              masterFile.id,
+            )}`;
+        },
+      );
+
+      actionsWrapper.appendChild(
+        editButton,
+      );
+
       if (isAdmin) {
         const copyButton =
           document.createElement("button");

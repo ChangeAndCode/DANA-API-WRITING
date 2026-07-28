@@ -1,0 +1,149 @@
+body {
+  align-items: flex-start;
+  background-color: #e6f7ff;
+}
+
+.master-editor-container {
+  width: min(1400px, 96%);
+  max-width: none;
+  margin: 30px auto;
+  text-align: left;
+}
+
+.master-editor-header {
+  margin-bottom: 25px;
+}
+
+.master-editor-header h1 {
+  margin-bottom: 10px;
+}
+
+.master-editor-header p {
+  margin: 0;
+  color: #667085;
+}
+
+.panel {
+  padding: 24px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  background-color: #fff;
+}
+
+.master-editor-metadata {
+  display: grid;
+  grid-template-columns: minmax(250px, 1fr) minmax(320px, 2fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.master-editor-metadata .form-group {
+  margin: 0;
+}
+
+.master-editor-sites {
+  display: flex;
+  gap: 24px;
+  margin: 0 0 20px;
+  padding: 18px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+}
+
+.master-editor-sites legend {
+  padding: 0 8px;
+  font-weight: 600;
+}
+
+.master-editor-sites label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.master-editor-scope {
+  color: #667085;
+}
+
+.master-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 25px 0 15px;
+}
+
+.master-editor-table-wrapper {
+  width: 100%;
+  max-height: 520px;
+  overflow: auto;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+}
+
+.master-editor-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+}
+
+.master-editor-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-width: 170px;
+  background-color: #f2f4f7;
+}
+
+.master-editor-table th,
+.master-editor-table td {
+  padding: 10px;
+  border: 1px solid #e4e7ec;
+}
+
+.master-editor-placeholder {
+  padding: 45px 20px;
+  border: 1px dashed #98a2b3;
+  border-radius: 8px;
+  background-color: #f9fafb;
+  text-align: center;
+}
+
+.master-editor-placeholder h2,
+.master-editor-placeholder p {
+  text-align: center;
+}
+
+.master-editor-actions {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 25px;
+}
+
+.master-editor-actions .button,
+.master-editor-actions button {
+  margin: 0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+@media (max-width: 800px) {
+  .master-editor-metadata {
+    grid-template-columns: 1fr;
+  }
+
+  .master-editor-toolbar,
+  .master-editor-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .master-editor-sites {
+    flex-direction: column;
+    gap: 12px;
+  }
+}

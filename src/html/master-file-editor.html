@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+
+  <title>Editar archivo madre</title>
+
+  <link rel="stylesheet" href="../css/main.css" />
+  <link rel="stylesheet" href="../css/file-conversion.css" />
+  <link rel="stylesheet" href="../css/master-file-editor.css" />
+</head>
+
+<body>
+  <main class="container master-editor-container">
+    <header class="master-editor-header">
+      <div>
+        <h1>Editar archivo madre</h1>
+
+        <p>
+          Consulta y modifica la información interna del archivo madre.
+        </p>
+      </div>
+    </header>
+
+    <p
+      id="masterEditorMessage"
+      class="message"
+    ></p>
+
+    <section
+      id="masterEditorPanel"
+      class="panel hidden"
+    >
+      <div class="master-editor-metadata">
+        <div class="form-group">
+          <label for="masterEditorType">
+            Tipo de archivo
+          </label>
+
+          <input
+            type="text"
+            id="masterEditorType"
+            disabled
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="masterEditorName">
+            Nombre para administración
+          </label>
+
+          <input
+            type="text"
+            id="masterEditorName"
+            maxlength="150"
+            disabled
+          />
+        </div>
+      </div>
+
+      <fieldset
+        id="masterEditorSitesGroup"
+        class="master-editor-sites hidden"
+      >
+        <legend>
+          Sedes donde estará disponible
+        </legend>
+
+        <label>
+          <input
+            type="checkbox"
+            name="masterEditorSites"
+            value="gaiim"
+            disabled
+          />
+          GAIIM
+        </label>
+
+        <label>
+          <input
+            type="checkbox"
+            name="masterEditorSites"
+            value="p1a"
+            disabled
+          />
+          P1A
+        </label>
+      </fieldset>
+
+      <p
+        id="masterEditorScopeMessage"
+        class="master-editor-scope"
+      ></p>
+
+      <div class="master-editor-toolbar">
+        <button
+          type="button"
+          id="masterEditorAddRowButton"
+          disabled
+        >
+          Agregar fila
+        </button>
+      </div>
+
+      <div
+        id="masterEditorTableWrapper"
+        class="master-editor-table-wrapper hidden"
+      >
+        <table
+          id="masterEditorTable"
+          class="data-table master-editor-table"
+        >
+          <thead id="masterEditorTableHead"></thead>
+          <tbody id="masterEditorTableBody"></tbody>
+        </table>
+      </div>
+
+      <div
+        id="masterEditorPlaceholder"
+        class="master-editor-placeholder"
+      >
+        <h2>Editor preparado</h2>
+
+        <p>
+          En el siguiente paso conectaremos los encabezados y registros
+          almacenados en MongoDB.
+        </p>
+      </div>
+
+      <div class="master-editor-actions">
+        <a
+          href="/master-files"
+          class="button"
+        >
+          Regresar a Archivos Madre
+        </a>
+
+        <button
+          type="button"
+          id="masterEditorSaveButton"
+          disabled
+        >
+          Guardar cambios
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <script
+    type="module"
+    src="../js/master-file-editor.js"
+  ></script>
+</body>
+</html>
