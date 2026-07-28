@@ -19,6 +19,11 @@ const VALID_MASTER_SITES = [
   "p1a",
 ];
 
+const VALID_MASTER_TYPES = [
+  "finishedProduct",
+  "rawMaterial",
+];
+
 /**
  * Genera errores que posteriormente podrá interpretar
  * el controlador para devolver el código HTTP correcto.
@@ -356,6 +361,272 @@ const listMasterFiles = async ({
     limit: safeLimit,
   });
 };
+
+/**
+ * Resuelve la sede que puede utilizarse para consultar catálogos.
+ * Los usuarios siempre quedan restringidos a su sede. El administrador
+ * debe indicar una porque puede trabajar con cualquiera de las dos.
+ */
+const resolveMasterLookupSite = (
+  user,
+  requestedSite,
+) => {
+  if (!user) {
+    throw createMasterServiceError(
+      "MASTER_AUTH_REQUIRED",
+      "Debes iniciar sesión para consultar archivos madre.",
+      401,
+    );
+  }
+
+  if (user.isActive !== true) {
+    throw createMasterServiceError(
+      "MASTER_USER_INACTIVE",
+      "La cuenta no está activa.",
+      403,
+    );
+  }
+
+  if (
+    !["admin", "user"].includes(
+      user.role,
+    )
+  ) {
+    throw createMasterServiceError(
+      "MASTER_ROLE_INVALID",
+      "El usuario no tiene permisos para consultar archivos madre.",
+      403,
+    );
+  }
+
+  const normalizedRequestedSite =
+    String(requestedSite || "")
+      .trim()
+      .toLowerCase();
+
+  if (user.role === "admin") {
+    if (
+      !VALID_MASTER_SITES.includes(
+        normalizedRequestedSite,
+      )
+    ) {
+      throw createMasterServiceError(
+        "MASTER_LOOKUP_SITE_REQUIRED",
+        "Selecciona la sede que se utilizará para consultar el archivo madre.",
+      );
+    }
+
+    return normalizedRequestedSite;
+  }
+
+  const userSite = String(
+    user.site || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    !VALID_MASTER_SITES.includes(
+      userSite,
+    )
+  ) {
+    throw createMasterServiceError(
+      "MASTER_USER_SITE_REQUIRED",
+      "El usuario no tiene una sede válida asignada.",
+      403,
+    );
+  }
+
+  return userSite;
+};
+
+/**
+ * Consulta el registro madre más reciente que coincida exactamente con
+ * Part Number, sede y tipo. Si existen varios registros se informa el
+ * número de coincidencias, pero se utiliza primero el archivo actualizado
+ * más recientemente y después la primera fila de ese archivo.
+ */
+const lookupMasterRecordByPartNumber =
+  async ({
+    user,
+    requestedSite,
+    partNumber,
+    masterTypes,
+  }) => {
+    const site =
+      resolveMasterLookupSite(
+        user,
+        requestedSite,
+      );
+
+    const normalizedPartNumber =
+      String(partNumber || "")
+        .trim()
+        .toUpperCase();
+
+    if (!normalizedPartNumber) {
+      throw createMasterServiceError(
+        "MASTER_LOOKUP_PART_NUMBER_REQUIRED",
+        "El Part Number es obligatorio.",
+      );
+    }
+
+    if (
+      normalizedPartNumber.length > 100
+    ) {
+      throw createMasterServiceError(
+        "MASTER_LOOKUP_PART_NUMBER_TOO_LONG",
+        "El Part Number excede la longitud permitida.",
+      );
+    }
+
+    const receivedTypes =
+      Array.isArray(masterTypes)
+        ? masterTypes
+        : String(masterTypes || "")
+            .split(",");
+
+    const normalizedMasterTypes = [
+      ...new Set(
+        receivedTypes
+          .map((masterType) =>
+            String(
+              masterType || "",
+            ).trim(),
+          )
+          .filter(Boolean),
+      ),
+    ];
+
+    const lookupTypes =
+      normalizedMasterTypes.length > 0
+        ? normalizedMasterTypes
+        : VALID_MASTER_TYPES;
+
+    const invalidTypes =
+      lookupTypes.filter(
+        (masterType) =>
+          !VALID_MASTER_TYPES.includes(
+            masterType,
+          ),
+      );
+
+    if (invalidTypes.length > 0) {
+      throw createMasterServiceError(
+        "MASTER_LOOKUP_TYPE_INVALID",
+        "El tipo de archivo madre solicitado no es válido.",
+      );
+    }
+
+    const records =
+      await masterFileRepository
+        .findMasterRecordsByPartNumber({
+          partNumberNormalized:
+            normalizedPartNumber,
+          site,
+          masterTypes:
+            lookupTypes,
+        });
+
+    const availableRecords =
+      records
+        .filter(
+          (record) =>
+            record.masterFileId,
+        )
+        .sort((left, right) => {
+          const leftUpdatedAt =
+            new Date(
+              left.masterFileId
+                .updatedAt ||
+              left.masterFileId
+                .lastImportedAt ||
+              0,
+            ).getTime();
+
+          const rightUpdatedAt =
+            new Date(
+              right.masterFileId
+                .updatedAt ||
+              right.masterFileId
+                .lastImportedAt ||
+              0,
+            ).getTime();
+
+          if (
+            rightUpdatedAt !==
+            leftUpdatedAt
+          ) {
+            return (
+              rightUpdatedAt -
+              leftUpdatedAt
+            );
+          }
+
+          return (
+            Number(left.sourceRow) -
+            Number(right.sourceRow)
+          );
+        });
+
+    const selectedRecord =
+      availableRecords[0] || null;
+
+    if (!selectedRecord) {
+      return {
+        site,
+        partNumber:
+          normalizedPartNumber,
+        masterTypes:
+          lookupTypes,
+        matchCount: 0,
+        match: null,
+      };
+    }
+
+    const masterFile =
+      selectedRecord.masterFileId;
+
+    return {
+      site,
+      partNumber:
+        normalizedPartNumber,
+      masterTypes:
+        lookupTypes,
+      matchCount:
+        availableRecords.length,
+      match: {
+        id:
+          selectedRecord._id,
+        masterType:
+          selectedRecord.masterType,
+        partNumber:
+          selectedRecord.partNumber,
+        sourceRow:
+          selectedRecord.sourceRow,
+        normalizedValues:
+          selectedRecord
+            .normalizedValues || {},
+        validationWarnings:
+          selectedRecord
+            .validationWarnings || [],
+        masterFile: {
+          id:
+            masterFile._id,
+          name:
+            masterFile.name,
+          masterType:
+            masterFile.masterType,
+          sites:
+            masterFile.sites,
+          revision:
+            masterFile.revision,
+          updatedAt:
+            masterFile.updatedAt,
+        },
+      },
+    };
+  };
 
 /**
  * Importa un archivo madre completo.
@@ -1651,6 +1922,7 @@ module.exports = {
   importMasterFile,
   normalizeMasterSites,
   listMasterFiles,
+  lookupMasterRecordByPartNumber,
   getMasterFileEditorData,
   updateMasterFileFromEditor,
   downloadMasterFile,

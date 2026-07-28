@@ -233,6 +233,59 @@ const findActiveMasterRecordsForEditor = async (masterFileId) => {
 };
 
 /**
+ * Busca registros activos por Part Number, sede y tipo de catálogo.
+ * La información del archivo padre permite descartar archivos que ya
+ * no estén disponibles y elegir el catálogo actualizado más reciente.
+ */
+const findMasterRecordsByPartNumber =
+  async ({
+    partNumberNormalized,
+    site,
+    masterTypes,
+    limit = 50,
+  }) => {
+    return MasterRecord.find({
+      partNumberNormalized,
+      sites: site,
+      masterType: {
+        $in: masterTypes,
+      },
+      isDeleted: false,
+    })
+      .sort({
+        sourceRow: 1,
+      })
+      .limit(limit)
+      .select([
+        "_id",
+        "masterFileId",
+        "masterType",
+        "partNumber",
+        "partNumberNormalized",
+        "sourceRow",
+        "normalizedValues",
+        "validationWarnings",
+      ].join(" "))
+      .populate({
+        path: "masterFileId",
+        match: {
+          status: "ready",
+          sites: site,
+        },
+        select: [
+          "name",
+          "masterType",
+          "sites",
+          "status",
+          "revision",
+          "updatedAt",
+          "lastImportedAt",
+        ].join(" "),
+      })
+      .lean();
+  };
+
+/**
  * Recupera los identificadores y posiciones
  * de los registros que pueden modificarse.
  */
@@ -350,6 +403,7 @@ module.exports = {
   findMasterFiles,
   findActiveMasterRecordsByMasterFileId,
   findActiveMasterRecordsForEditor,
+  findMasterRecordsByPartNumber,
   findActiveMasterRecordsForUpdate,
   findHighestMasterRecordSourceRow,
   findActiveMasterRecordsForCopy,

@@ -7,7 +7,15 @@ const updateFileButton = document.getElementById("updateFileButton");
 const validationResult = document.getElementById("validationResult");
 const adminFileNameGroup = document.getElementById("adminFileNameGroup");
 const adminFileNameInput = document.getElementById("adminFileName");
+const fileCreationSiteGroup = document.getElementById("fileCreationSiteGroup");
+const fileCreationSite = document.getElementById("fileCreationSite");
+const fileCreationSiteHelp = document.getElementById("fileCreationSiteHelp");
 let editingFileId = "";
+let currentFileCreationUser = null;
+
+const masterLookupTimers = new WeakMap();
+const masterLookupControllers = new WeakMap();
+const MASTER_LOOKUP_DELAY_MS = 350;
 
 const map = {
   finishedProduct: "format-finishedProduct",
@@ -399,6 +407,85 @@ async function loadManualCatalogOptions(forceRefresh = false) {
     });
 
   return manualCatalogLoadPromise;
+}
+
+async function loadFileCreationUserContext() {
+  const response = await fetch("/api/user/profile");
+  const data = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok || !data.user) {
+    throw new Error(
+      data.message ||
+        "No fue posible consultar el usuario.",
+    );
+  }
+
+  currentFileCreationUser = data.user;
+
+  if (fileCreationSiteGroup) {
+    fileCreationSiteGroup.classList.remove("hidden");
+  }
+
+  if (!fileCreationSite) {
+    return currentFileCreationUser;
+  }
+
+  if (currentFileCreationUser.role === "admin") {
+    fileCreationSite.disabled = Boolean(editingFileId);
+
+    if (fileCreationSiteHelp) {
+      fileCreationSiteHelp.textContent =
+        "Como administrador debes elegir la sede antes de consultar Part Numbers o crear el archivo.";
+    }
+  } else {
+    fileCreationSite.value = String(
+      currentFileCreationUser.site || "",
+    )
+      .trim()
+      .toLowerCase();
+
+    fileCreationSite.disabled = true;
+
+    if (fileCreationSiteHelp) {
+      fileCreationSiteHelp.textContent =
+        "La consulta utiliza la sede asignada a tu usuario.";
+    }
+  }
+
+  refreshMasterLookupsForCurrentDocument();
+
+  return currentFileCreationUser;
+}
+
+function refreshMasterLookupsForCurrentDocument() {
+  const documentType = fileType?.value || "";
+  const tbody = getTableBodyForDocumentType(documentType);
+
+  if (!tbody) return;
+
+  tbody.querySelectorAll("tr").forEach((rowElement) => {
+    getMasterLookupInputKeys(documentType).forEach((inputKey) => {
+      const input = getRowEditorByColumnKey(
+        rowElement,
+        documentType,
+        inputKey,
+      );
+
+      if (input && String(input.value || "").trim()) {
+        scheduleMasterLookup(
+          input,
+          rowElement,
+          documentType,
+          inputKey,
+        );
+      } else {
+        clearMasterAutofilledValues(rowElement);
+        setMasterLookupStatus(rowElement, "", "");
+      }
+    });
+  });
 }
 
 function getCatalogAutocompleteUi(input) {
@@ -1020,6 +1107,562 @@ function getColumnsForDocumentType(documentType) {
   return [];
 }
 
+function getSelectedFileCreationSite() {
+  return String(fileCreationSite?.value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function getMasterLookupInputKeys(documentType) {
+  if (documentType === "billOfMaterials") {
+    return [
+      "finishedGoodPartNumber",
+      "componentPartNumber",
+    ];
+  }
+
+  if (
+    documentType === "finishedProduct" ||
+    documentType === "rawMaterial" ||
+    documentType === "splScrap"
+  ) {
+    return ["partNumber"];
+  }
+
+  return [];
+}
+
+function getMasterTypesForLookup(documentType, inputKey) {
+  if (documentType === "finishedProduct") {
+    return ["finishedProduct"];
+  }
+
+  if (documentType === "rawMaterial") {
+    return ["rawMaterial"];
+  }
+
+  if (documentType === "billOfMaterials") {
+    return inputKey === "finishedGoodPartNumber"
+      ? ["finishedProduct"]
+      : ["rawMaterial"];
+  }
+
+  if (documentType === "splScrap") {
+    const typeOfGoods = String(
+      splMetaInputs["Type of goods"]?.value || "",
+    )
+      .trim()
+      .toUpperCase();
+
+    if (typeOfGoods === "FG") {
+      return ["finishedProduct"];
+    }
+
+    if (typeOfGoods === "RM") {
+      return ["rawMaterial"];
+    }
+
+    return [
+      "finishedProduct",
+      "rawMaterial",
+    ];
+  }
+
+  return [];
+}
+
+function getRowEditorByColumnKey(rowElement, documentType, columnKey) {
+  const columns = getColumnsForDocumentType(documentType);
+  const columnIndex = columns.findIndex(
+    (column) => column.key === columnKey,
+  );
+
+  if (columnIndex < 0) return null;
+
+  const editors = getRowEditorsForDocumentType(rowElement);
+  return editors[columnIndex] || null;
+}
+
+function ensureMasterLookupStatus(rowElement) {
+  if (!rowElement) return null;
+
+  let status = rowElement.querySelector(
+    ".master-lookup-status",
+  );
+
+  if (status) return status;
+
+  const actionsCell = rowElement.lastElementChild;
+  if (!actionsCell) return null;
+
+  status = document.createElement("span");
+  status.className = "master-lookup-status";
+  status.setAttribute("aria-live", "polite");
+  actionsCell.insertBefore(status, actionsCell.firstChild);
+
+  return status;
+}
+
+function setMasterLookupStatus(rowElement, state, message) {
+  const status = ensureMasterLookupStatus(rowElement);
+  if (!status) return;
+
+  status.className = "master-lookup-status";
+  rowElement.classList.remove(
+    "master-lookup-found",
+    "master-lookup-missing",
+  );
+
+  if (state) {
+    status.classList.add(`is-${state}`);
+  }
+
+  if (state === "found" || state === "warning") {
+    rowElement.classList.add("master-lookup-found");
+  } else if (state === "missing") {
+    rowElement.classList.add("master-lookup-missing");
+  }
+
+  status.textContent = message || "";
+}
+
+function clearMasterAutofilledValues(
+  rowElement,
+  sourceInputKey = "",
+) {
+  if (!rowElement) return;
+
+  rowElement
+    .querySelectorAll(
+      "input[data-master-autofilled='true']",
+    )
+    .forEach((input) => {
+      if (
+        sourceInputKey &&
+        input.dataset.masterAutofilledSource !==
+          sourceInputKey
+      ) {
+        return;
+      }
+
+      input.value = "";
+      delete input.dataset.masterAutofilled;
+      delete input.dataset.masterAutofilledSource;
+      input.classList.remove("master-autofilled");
+      input.dispatchEvent(
+        new Event("input", { bubbles: true }),
+      );
+      input.dispatchEvent(
+        new Event("change", { bubbles: true }),
+      );
+    });
+}
+
+function getFirstMasterValue(values, keys) {
+  for (const key of keys) {
+    const value = values?.[key];
+
+    if (
+      value !== undefined &&
+      value !== null &&
+      String(value).trim() !== ""
+    ) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function getFdaAffirmationValue(values, sequence, component) {
+  const affirmations = Array.isArray(values?.fdaAffirmations)
+    ? values.fdaAffirmations
+    : [];
+
+  const affirmation = affirmations.find(
+    (item) => Number(item?.sequence) === sequence,
+  );
+
+  return affirmation?.[component] || "";
+}
+
+function buildMasterAutofillValues(
+  documentType,
+  inputKey,
+  normalizedValues = {},
+) {
+  if (documentType === "finishedProduct") {
+    const values = {
+      description: normalizedValues.description,
+      unitWeightLb: normalizedValues.unitNetWeight,
+      dutiableValueUsd: getFirstMasterValue(
+        normalizedValues,
+        ["dutiableValueUsd", "materialCostUsd"],
+      ),
+      addedValueUsd: normalizedValues.addedValueUsd,
+      usaImportHts: normalizedValues.importationHtsCode,
+      usaExportCode: normalizedValues.exportationHtsCode,
+      "FDA Product Code": normalizedValues.fdaProductCode,
+      "FDA Storage": normalizedValues.fdaStorage,
+      "FDA Marker": normalizedValues.fdaMarker,
+      "USML (ITAR)": normalizedValues.usmlItar,
+    };
+
+    for (let sequence = 1; sequence <= 6; sequence += 1) {
+      values[`FDA Affirmation of Compliance Code ${sequence}`] =
+        getFdaAffirmationValue(
+          normalizedValues,
+          sequence,
+          "code",
+        );
+
+      values[`FDA Affirmation of Compliance Qualifier ${sequence}`] =
+        getFdaAffirmationValue(
+          normalizedValues,
+          sequence,
+          "qualifier",
+        );
+    }
+
+    return values;
+  }
+
+  if (documentType === "rawMaterial") {
+    return {
+      description: normalizedValues.description,
+      unitWeightLb: normalizedValues.unitNetWeight,
+      unitCostUsd: normalizedValues.unitCostUsd,
+      importHts: normalizedValues.importationHtsCode,
+      exportHts: normalizedValues.exportationHtsCode,
+      eccn: normalizedValues.eccn,
+      licenseNumber: normalizedValues.licenseNumber,
+      licenseException: normalizedValues.licenseException,
+      licenseExpiration: normalizedValues.licenseExpirationDate
+        ? formatYmdCompact(normalizedValues.licenseExpirationDate)
+        : "",
+      usml: normalizedValues.usmlItar,
+    };
+  }
+
+  if (
+    documentType === "billOfMaterials" &&
+    inputKey === "componentPartNumber"
+  ) {
+    return {
+      componentClassification:
+        normalizedValues.productFamily,
+    };
+  }
+
+  if (documentType === "splScrap") {
+    return {
+      description: normalizedValues.description,
+      unitValueUsd: getFirstMasterValue(
+        normalizedValues,
+        [
+          "unitCostUsd",
+          "materialCostUsd",
+          "totalUnitCostUsd",
+        ],
+      ),
+      addedValueUsd: normalizedValues.addedValueUsd,
+      unitNetWeight: normalizedValues.unitNetWeight,
+      eccn: normalizedValues.eccn,
+      licenseNo: normalizedValues.licenseNumber,
+      licenseException: normalizedValues.licenseException,
+      usImpHts: normalizedValues.importationHtsCode,
+      usExpHts: normalizedValues.exportationHtsCode,
+      mainFunction: normalizedValues.mainFunction,
+    };
+  }
+
+  return {};
+}
+
+function applyMasterAutofill(
+  rowElement,
+  documentType,
+  inputKey,
+  match,
+) {
+  const values = buildMasterAutofillValues(
+    documentType,
+    inputKey,
+    match?.normalizedValues || {},
+  );
+
+  let filledCount = 0;
+
+  Object.entries(values).forEach(([columnKey, value]) => {
+    if (
+      value === undefined ||
+      value === null ||
+      String(value).trim() === ""
+    ) {
+      return;
+    }
+
+    const input = getRowEditorByColumnKey(
+      rowElement,
+      documentType,
+      columnKey,
+    );
+
+    if (!input || input.readOnly || input.disabled) {
+      return;
+    }
+
+    input.value = String(value);
+    input.dispatchEvent(
+      new Event("input", { bubbles: true }),
+    );
+    input.dispatchEvent(
+      new Event("change", { bubbles: true }),
+    );
+    input.dataset.masterAutofilled = "true";
+    input.dataset.masterAutofilledSource =
+      inputKey;
+    input.classList.add("master-autofilled");
+    filledCount += 1;
+  });
+
+  return filledCount;
+}
+
+async function runMasterLookup(
+  input,
+  rowElement,
+  documentType,
+  inputKey,
+) {
+  const partNumber = String(input.value || "")
+    .trim()
+    .toUpperCase();
+
+  const site = getSelectedFileCreationSite();
+
+  if (!partNumber) {
+    setMasterLookupStatus(rowElement, "", "");
+    return;
+  }
+
+  if (!site) {
+    setMasterLookupStatus(
+      rowElement,
+      "warning",
+      "Selecciona una sede",
+    );
+    return;
+  }
+
+  const previousController =
+    masterLookupControllers.get(input);
+
+  if (previousController) {
+    previousController.abort();
+  }
+
+  const controller = new AbortController();
+  masterLookupControllers.set(input, controller);
+
+  setMasterLookupStatus(
+    rowElement,
+    "loading",
+    "Buscando...",
+  );
+
+  const masterTypes = getMasterTypesForLookup(
+    documentType,
+    inputKey,
+  );
+
+  const query = new URLSearchParams({
+    partNumber,
+    site,
+    masterTypes: masterTypes.join(","),
+  });
+
+  try {
+    const response = await fetch(
+      `/api/master-files/lookup?${query.toString()}`,
+      {
+        signal: controller.signal,
+      },
+    );
+
+    const data = await response
+      .json()
+      .catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        data.message ||
+          "No fue posible consultar el archivo madre.",
+      );
+    }
+
+    if (
+      String(input.value || "")
+        .trim()
+        .toUpperCase() !== partNumber
+    ) {
+      return;
+    }
+
+    if (!data.match) {
+      setMasterLookupStatus(
+        rowElement,
+        "missing",
+        "No encontrado",
+      );
+      return;
+    }
+
+    const filledCount = applyMasterAutofill(
+      rowElement,
+      documentType,
+      inputKey,
+      data.match,
+    );
+
+    const matchCount = Number(data.matchCount) || 1;
+    const sourceName =
+      data.match.masterFile?.name ||
+      "Archivo Madre";
+
+    if (matchCount > 1) {
+      setMasterLookupStatus(
+        rowElement,
+        "warning",
+        `${filledCount} campos · ${matchCount} coincidencias`,
+      );
+    } else {
+      setMasterLookupStatus(
+        rowElement,
+        "found",
+        `${filledCount} campos · ${sourceName}`,
+      );
+    }
+  } catch (error) {
+    if (error.name === "AbortError") {
+      return;
+    }
+
+    console.error(
+      "Error al consultar Part Number:",
+      error,
+    );
+
+    setMasterLookupStatus(
+      rowElement,
+      "missing",
+      "Error de consulta",
+    );
+  } finally {
+    if (
+      masterLookupControllers.get(input) ===
+      controller
+    ) {
+      masterLookupControllers.delete(input);
+    }
+  }
+}
+
+function scheduleMasterLookup(
+  input,
+  rowElement,
+  documentType,
+  inputKey,
+) {
+  const currentTimer =
+    masterLookupTimers.get(input);
+
+  if (currentTimer) {
+    window.clearTimeout(currentTimer);
+  }
+
+  const currentController =
+    masterLookupControllers.get(input);
+
+  if (currentController) {
+    currentController.abort();
+    masterLookupControllers.delete(input);
+  }
+
+  clearMasterAutofilledValues(
+    rowElement,
+    inputKey,
+  );
+
+  const partNumber = String(input.value || "").trim();
+
+  if (!partNumber) {
+    setMasterLookupStatus(rowElement, "", "");
+    return;
+  }
+
+  const timer = window.setTimeout(() => {
+    masterLookupTimers.delete(input);
+    runMasterLookup(
+      input,
+      rowElement,
+      documentType,
+      inputKey,
+    );
+  }, MASTER_LOOKUP_DELAY_MS);
+
+  masterLookupTimers.set(input, timer);
+}
+
+function bindMasterLookupForRow(rowElement, documentType) {
+  if (!rowElement) return;
+
+  getMasterLookupInputKeys(documentType).forEach((inputKey) => {
+    const input = getRowEditorByColumnKey(
+      rowElement,
+      documentType,
+      inputKey,
+    );
+
+    if (
+      !input ||
+      input.dataset.masterLookupBound === "true"
+    ) {
+      return;
+    }
+
+    input.dataset.masterLookupBound = "true";
+    input.autocomplete = "off";
+
+    input.addEventListener("input", () => {
+      scheduleMasterLookup(
+        input,
+        rowElement,
+        documentType,
+        inputKey,
+      );
+    });
+  });
+
+  if (rowElement.dataset.masterAutofillEditBound !== "true") {
+    rowElement.addEventListener("input", (event) => {
+      const input = event.target;
+
+      if (
+        event.isTrusted &&
+        input instanceof HTMLInputElement &&
+        input.dataset.masterAutofilled === "true"
+      ) {
+        delete input.dataset.masterAutofilled;
+        delete input.dataset.masterAutofilledSource;
+        input.classList.remove("master-autofilled");
+      }
+    });
+
+    rowElement.dataset.masterAutofillEditBound = "true";
+  }
+}
+
 function addRowForDocumentType(documentType, values = {}) {
   if (documentType === "finishedProduct") return addFinishedProductRow(values);
   if (documentType === "rawMaterial") return addRawMaterialRow(values);
@@ -1321,6 +1964,7 @@ function addFinishedProductRow(values = {}) {
 
   fpBody.appendChild(row);
   bindCatalogInputsForRow(row, finishedProductColumns);
+  bindMasterLookupForRow(row, "finishedProduct");
   updateTableScroll(fpBody);
 }
 
@@ -1521,6 +2165,7 @@ function addRawMaterialRow(values = {}) {
 
   rmBody.appendChild(row);
   bindCatalogInputsForRow(row, rawMaterialColumns);
+  bindMasterLookupForRow(row, "rawMaterial");
   updateTableScroll(rmBody);
 }
 
@@ -1658,6 +2303,7 @@ function addBillOfMaterialsRow(values = {}) {
 
   bmBody.appendChild(row);
   bindCatalogInputsForRow(row, billOfMaterialsColumns);
+  bindMasterLookupForRow(row, "billOfMaterials");
   updateTableScroll(bmBody);
 }
 
@@ -1949,6 +2595,12 @@ function buildSplScrapMetaFields() {
     if (field.key === "Type of shipment") {
       input.addEventListener("change", () => {
         applySplScrapShipmentMode();
+        refreshMasterLookupsForCurrentDocument();
+      });
+    }
+    if (field.key === "Type of goods") {
+      input.addEventListener("change", () => {
+        refreshMasterLookupsForCurrentDocument();
       });
     }
 
@@ -2155,6 +2807,7 @@ function addSplScrapRow(values = {}) {
 
   splBody.appendChild(row);
   bindCatalogInputsForRow(row, splScrapColumns);
+  bindMasterLookupForRow(row, "splScrap");
   applySplScrapRowShipmentMode(row, getSplScrapIsScrapMode());
   updateSplScrapRowComputedFields(row);
   updateTableScroll(splBody);
@@ -2598,6 +3251,19 @@ async function createManualFile(documentType, rows, displayName) {
     return;
   }
 
+  const site = getSelectedFileCreationSite();
+
+  if (!site) {
+    renderErrorList([
+      {
+        message:
+          "Selecciona la sede que se utilizará para crear el archivo.",
+      },
+    ]);
+    fileCreationSite?.focus();
+    return;
+  }
+
   const spinner = createFileButton
     ? createFileButton.querySelector(".spinner")
     : null;
@@ -2612,6 +3278,7 @@ async function createManualFile(documentType, rows, displayName) {
         documentType,
         rows,
         displayName: displayName || undefined,
+        site,
       }),
     });
     const data = await response.json();
@@ -2652,8 +3319,12 @@ async function loadFileForEdit(docId, docType) {
     ) {
       renderErrorList([{ message: "Tipo de archivo invalido para editar." }]);
       return;
-    }
+  }
   try {
+    if (!currentFileCreationUser) {
+      await loadFileCreationUserContext();
+    }
+
     const response = await fetch(
       `/api/files/admin-files/${docId}?type=${targetType}`,
     );
@@ -2667,6 +3338,27 @@ async function loadFileForEdit(docId, docType) {
     }
 
     editingFileId = doc._id;
+
+    if (fileCreationSite) {
+      const documentSite = String(
+        doc.site || "",
+      )
+        .trim()
+        .toLowerCase();
+
+      fileCreationSite.value = String(
+        documentSite ||
+        currentFileCreationUser?.site ||
+        "",
+      )
+        .trim()
+        .toLowerCase();
+
+      fileCreationSite.disabled =
+        currentFileCreationUser?.role !== "admin" ||
+        Boolean(documentSite);
+    }
+
     if (fileType) {
       fileType.value = targetType;
       fileType.disabled = true;
@@ -2708,6 +3400,27 @@ if (fileType) {
 }
 
 loadManualCatalogOptions();
+loadFileCreationUserContext().catch((error) => {
+  console.error(
+    "No fue posible preparar la sede:",
+    error,
+  );
+
+  renderErrorList([
+    {
+      message:
+        error.message ||
+        "No fue posible preparar la sede.",
+    },
+  ]);
+});
+
+if (fileCreationSite) {
+  fileCreationSite.addEventListener("change", () => {
+    refreshMasterLookupsForCurrentDocument();
+  });
+}
+
 window.addEventListener("focus", () => {
   loadManualCatalogOptions(true);
 });
@@ -2843,6 +3556,9 @@ if (updateFileButton) {
           body: JSON.stringify({
             rows,
             displayName: displayName || undefined,
+            site:
+              getSelectedFileCreationSite() ||
+              undefined,
           }),
         },
       );

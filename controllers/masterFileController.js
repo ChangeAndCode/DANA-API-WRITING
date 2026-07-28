@@ -282,6 +282,61 @@ const listMasterFiles = async (
 };
 
 /**
+ * Busca un Part Number dentro de los archivos madre disponibles para
+ * la sede del usuario o la sede seleccionada por un administrador.
+ */
+const lookupMasterRecordByPartNumber =
+  async (
+    req,
+    res,
+  ) => {
+    try {
+      const result =
+        await masterFileService
+          .lookupMasterRecordByPartNumber({
+            user:
+              req.user,
+            requestedSite:
+              req.query.site,
+            partNumber:
+              req.query.partNumber,
+            masterTypes:
+              req.query.masterTypes,
+          });
+
+      return res
+        .status(200)
+        .json(result);
+    } catch (error) {
+      const statusCode =
+        Number.isInteger(
+          error.statusCode,
+        )
+          ? error.statusCode
+          : 500;
+
+      if (statusCode >= 500) {
+        console.error(
+          "[MasterFiles] Error al buscar Part Number:",
+          error,
+        );
+      }
+
+      return res
+        .status(statusCode)
+        .json({
+          code:
+            error.code ||
+            "MASTER_LOOKUP_ERROR",
+          message:
+            statusCode < 500
+              ? error.message
+              : "Error interno al consultar el Part Number.",
+        });
+    }
+  };
+
+/**
  * Devuelve el contenido de un archivo madre
  * para mostrarlo en el editor.
  */
@@ -805,6 +860,7 @@ module.exports = {
   importMasterFile,
   parseSitesField,
   listMasterFiles,
+  lookupMasterRecordByPartNumber,
   getMasterFileEditorData,
   updateMasterFileFromEditor,
   downloadMasterFile,

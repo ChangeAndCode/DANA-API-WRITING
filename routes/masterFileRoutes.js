@@ -45,6 +45,19 @@ router.post(
 );
 
 /**
+ * GET /api/master-files/lookup
+ *
+ * Consulta exacta por Part Number respetando la sede del usuario.
+ * Debe declararse antes de las rutas dinámicas /:masterFileId.
+ */
+router.get(
+  "/lookup",
+  USER_PROTECTED,
+  masterFileController
+    .lookupMasterRecordByPartNumber,
+);
+
+/**
  * GET /api/master-files/:masterFileId/editor
  *
  * Administradores: cualquier archivo.

@@ -659,15 +659,32 @@ const importManualFile = async (req, res) => {
 };
 
 const createManualFile = async (req, res) => {
-  const { documentType, rows, outputFormat, displayName } = req.body || {};
+  const {
+    documentType,
+    rows,
+    outputFormat,
+    displayName,
+    site,
+  } = req.body || {};
   const normalizedName = normalizeAdminFileName(displayName);
-  const requestUserSite = getScopedUserSite(req.user);
+  const requestUserSite =
+    resolveDocumentSiteForWrite(
+      req.user,
+      site,
+    );
 
   if (!documentType) {
     return res.status(400).json({ message: "documentType es requerido." });
   }
   if (!Array.isArray(rows)) {
     return res.status(400).json({ message: "rows debe ser un arreglo." });
+  }
+  if (!requestUserSite) {
+    return res.status(400).json({
+      message:
+        "Debes seleccionar una sede válida para crear el archivo.",
+      code: "DOCUMENT_SITE_REQUIRED",
+    });
   }
 
   const finalOutputFormat = outputFormat || getDefaultFormat(documentType);
@@ -994,7 +1011,11 @@ const copyAdminFileById = async (req, res) => {
 const updateAdminFileById = async (req, res) => {
   const { id } = req.params;
   const { type } = req.query || {};
-  const { rows, displayName } = req.body || {};
+  const {
+    rows,
+    displayName,
+    site,
+  } = req.body || {};
 
   if (!isSupportedAdminFileType(type)) {
     return res.status(400).json({
@@ -1027,13 +1048,29 @@ const updateAdminFileById = async (req, res) => {
 
     const normalizedName = normalizeAdminFileName(displayName);
     const nextAdminFileName = normalizedName || doc.adminFileName || "";
-    const scopedSite = normalizeUserSite(doc.site) || getScopedUserSite(req.user);
+    const scopedSite =
+      resolveDocumentSiteForWrite(
+        req.user,
+        normalizeUserSite(doc.site) ||
+          site,
+      );
+
+    if (!scopedSite) {
+      return res.status(400).json({
+        message:
+          "Debes seleccionar una sede válida para actualizar el archivo.",
+        code:
+          "DOCUMENT_SITE_REQUIRED",
+      });
+    }
+
     await assertAdminFileNameAvailable(nextAdminFileName, {
-      site: scopedSite || undefined,
+      site: scopedSite,
       exclude: { type, id },
     });
 
     doc.adminFileName = nextAdminFileName || doc.adminFileName;
+    doc.site = scopedSite;
     doc.rows = Array.isArray(validationResult.transformedData.Sheet1)
       ? validationResult.transformedData.Sheet1
       : [];
