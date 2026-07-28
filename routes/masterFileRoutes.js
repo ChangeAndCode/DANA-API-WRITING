@@ -45,6 +45,18 @@ router.post(
 );
 
 /**
+ * GET /api/master-files/:masterFileId/editor
+ *
+ * Administradores: cualquier archivo.
+ * Usuarios: solamente archivos correspondientes a su sede.
+ */
+router.get(
+  "/:masterFileId/editor",
+  USER_PROTECTED,
+  masterFileController.getMasterFileEditorData,
+);
+
+/**
  * GET /api/master-files/:masterFileId/download
  *
  * Administradores: cualquier archivo.

@@ -497,6 +497,59 @@ const assertMasterFileAccess = (
 };
 
 /**
+ * Obtiene los metadatos y registros de un archivo madre
+ * para mostrarlos en el editor.
+ */
+const getMasterFileEditorData = async ({
+  masterFileId,
+  user,
+}) => {
+  if (
+    !masterFileId ||
+    !mongoose.Types.ObjectId.isValid(masterFileId)
+  ) {
+    throw createMasterServiceError(
+      "MASTER_FILE_ID_INVALID",
+      "El identificador del archivo madre no es válido.",
+    );
+  }
+
+  const masterFile =
+    await masterFileRepository.findMasterFileById(
+      masterFileId,
+    );
+
+  if (!masterFile) {
+    throw createMasterServiceError(
+      "MASTER_FILE_NOT_FOUND",
+      "El archivo madre no existe.",
+      404,
+    );
+  }
+
+  assertMasterFileAccess(masterFile, user);
+
+  if (masterFile.status !== "ready") {
+    throw createMasterServiceError(
+      "MASTER_FILE_NOT_READY",
+      "El archivo madre todavía no está disponible.",
+      409,
+    );
+  }
+
+  const records =
+    await masterFileRepository
+      .findActiveMasterRecordsForEditor(
+        masterFileId,
+      );
+
+  return {
+    masterFile,
+    records,
+  };
+};
+
+/**
  * Construye la descarga del archivo madre.
  */
 const downloadMasterFile = async ({
@@ -885,6 +938,7 @@ module.exports = {
   importMasterFile,
   normalizeMasterSites,
   listMasterFiles,
+  getMasterFileEditorData,
   downloadMasterFile,
   copyMasterFile,
   deleteMasterFile,

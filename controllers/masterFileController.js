@@ -282,6 +282,90 @@ const listMasterFiles = async (
 };
 
 /**
+ * Devuelve el contenido de un archivo madre
+ * para mostrarlo en el editor.
+ */
+const getMasterFileEditorData = async (req, res) => {
+  try {
+    const result =
+      await masterFileService.getMasterFileEditorData({
+        masterFileId: req.params.masterFileId,
+        user: req.user,
+      });
+
+    const masterFile = result.masterFile;
+
+    return res.status(200).json({
+      masterFile: {
+        id: masterFile._id,
+        name: masterFile.name,
+        originalFileName: masterFile.originalFileName,
+        masterType: masterFile.masterType,
+        sites: masterFile.sites,
+        sourceSheet: masterFile.sourceSheet,
+        headerRow: masterFile.headerRow,
+        partNumberColumn: masterFile.partNumberColumn,
+        recordCount: masterFile.recordCount,
+        revision: masterFile.revision,
+        updatedAt: masterFile.updatedAt,
+
+        headers: (masterFile.headers || []).map((header) => ({
+          originalName: header.originalName,
+          normalizedName: header.normalizedName,
+          columnIndex: header.columnIndex,
+          columnLetter: header.columnLetter,
+          mappedField: header.mappedField,
+          ignored: header.ignored,
+        })),
+      },
+
+      records: result.records.map((record) => ({
+        id: record._id,
+        partNumber: record.partNumber,
+        sourceRow: record.sourceRow,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+
+        rawCells: (record.rawCells || []).map((cell) => ({
+          header: cell.header,
+          columnIndex: cell.columnIndex,
+          columnLetter: cell.columnLetter,
+          value: cell.value,
+        })),
+
+        validationWarnings:
+          record.validationWarnings || [],
+      })),
+
+      loadedRecordCount: result.records.length,
+    });
+  } catch (error) {
+    const statusCode =
+      Number.isInteger(error.statusCode)
+        ? error.statusCode
+        : 500;
+
+    if (statusCode >= 500) {
+      console.error(
+        "[MasterFiles] Error al cargar editor:",
+        error,
+      );
+    }
+
+    return res.status(statusCode).json({
+      code:
+        error.code ||
+        "MASTER_EDITOR_LOAD_ERROR",
+
+      message:
+        statusCode < 500
+          ? error.message
+          : "Error interno al cargar el editor del archivo madre.",
+    });
+  }
+};
+
+/**
  * Descarga una reconstrucción del archivo madre
  * sin imágenes.
  */
@@ -606,6 +690,7 @@ module.exports = {
   importMasterFile,
   parseSitesField,
   listMasterFiles,
+  getMasterFileEditorData,
   downloadMasterFile,
   copyMasterFile,
   deleteMasterFile,

@@ -154,6 +154,27 @@ const findActiveMasterRecordsByMasterFileId =
   };
 
 /**
+ * Recupera los registros necesarios para el editor.
+ */
+const findActiveMasterRecordsForEditor = async (masterFileId) => {
+  return MasterRecord.find({
+    masterFileId,
+    isDeleted: false,
+  })
+    .sort({ sourceRow: 1 })
+    .select([
+      "_id",
+      "partNumber",
+      "sourceRow",
+      "rawCells",
+      "validationWarnings",
+      "createdAt",
+      "updatedAt",
+    ].join(" "))
+    .lean();
+};
+
+/**
  * Recupera toda la información necesaria para copiar
  * los registros activos de un archivo madre.
  */
@@ -208,6 +229,7 @@ module.exports = {
   findMasterFileById,
   findMasterFiles,
   findActiveMasterRecordsByMasterFileId,
+  findActiveMasterRecordsForEditor,
   findActiveMasterRecordsForCopy,
   deleteMasterRecordsByMasterFileId,
   deleteMasterFileById,
