@@ -135,6 +135,7 @@
       <div class="master-editor-actions">
         <a
           href="/master-files"
+          id="masterEditorBackLink"
           class="button"
         >
           Regresar a Archivos Madre
@@ -150,6 +151,45 @@
       </div>
     </section>
   </main>
+
+  <div
+    id="masterEditorExitModal"
+    class="modal-overlay hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="masterEditorExitModalTitle"
+    aria-describedby="masterEditorExitModalMessage"
+  >
+    <div class="modal">
+      <h3 id="masterEditorExitModalTitle">
+        Cambios sin guardar
+      </h3>
+
+      <p id="masterEditorExitModalMessage">
+        Tienes cambios pendientes. Si sales del editor sin guardar,
+        perderás la información modificada.
+        ¿Deseas continuar?
+      </p>
+
+      <div class="modal-actions">
+        <button
+          type="button"
+          id="masterEditorExitCancelButton"
+          class="button"
+        >
+          Seguir editando
+        </button>
+
+        <button
+          type="button"
+          id="masterEditorExitConfirmButton"
+          class="row-remove-btn"
+        >
+          Salir sin guardar
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script
     type="module"
