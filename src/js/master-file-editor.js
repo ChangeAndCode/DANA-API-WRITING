@@ -578,12 +578,17 @@ const renderMasterTable = (
   );
 };
 
-const addMasterEditorRow = () => {
+const addMasterEditorRow = (
+  {
+    focusFirstCell = true,
+    notifyChanges = true,
+  } = {},
+) => {
   if (
     !canEditMasterContent() ||
     orderedMasterHeaders.length === 0
   ) {
-    return;
+    return null;
   }
 
   const newRow =
@@ -596,25 +601,564 @@ const addMasterEditorRow = () => {
     newRow,
   );
 
-  markEditorDirty();
+  if (notifyChanges) {
+    markEditorDirty();
+  }
+
+  if (focusFirstCell) {
+    window.requestAnimationFrame(
+      () => {
+        masterEditorTableWrapper.scrollTop =
+          masterEditorTableWrapper.scrollHeight;
+
+        const firstInput =
+          newRow.querySelector(
+            "input.master-editor-cell",
+          );
+
+        firstInput?.focus();
+      },
+    );
+  }
+
+  return newRow;
+};
+
+const getMasterRowInputs = (
+  row,
+) => {
+  if (!row) {
+    return [];
+  }
+
+  return Array.from(
+    row.querySelectorAll(
+      "input.master-editor-cell:not(:disabled)",
+    ),
+  );
+};
+
+const focusMasterCell = (
+  rows,
+  rowIndex,
+  columnIndex,
+) => {
+  const targetRow =
+    rows[rowIndex];
+
+  if (!targetRow) {
+    return false;
+  }
+
+  const targetInputs =
+    getMasterRowInputs(targetRow);
+
+  const targetInput =
+    targetInputs[columnIndex];
+
+  if (!targetInput) {
+    return false;
+  }
+
+  targetInput.focus();
+
+  return true;
+};
+
+const isCaretAtStart = (
+  input,
+) => {
+  if (
+    typeof input.selectionStart !==
+    "number"
+  ) {
+    return true;
+  }
+
+  return (
+    input.selectionStart === 0 &&
+    input.selectionEnd === 0
+  );
+};
+
+const isCaretAtEnd = (
+  input,
+) => {
+  if (
+    typeof input.selectionEnd !==
+    "number"
+  ) {
+    return true;
+  }
+
+  const valueLength =
+    input.value.length;
+
+  return (
+    input.selectionStart ===
+      valueLength &&
+    input.selectionEnd ===
+      valueLength
+  );
+};
+
+const handleMasterTableNavigation = (
+  event,
+) => {
+  /*
+   * No intervenir si otro componente, como
+   * un catálogo abierto, ya procesó el evento.
+   */
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.metaKey
+  ) {
+    return;
+  }
+
+  const currentInput =
+    event.target.closest(
+      "input.master-editor-cell",
+    );
+
+  if (
+    !currentInput ||
+    currentInput.disabled
+  ) {
+    return;
+  }
 
   /*
-   * Desplaza únicamente la tabla hasta
-   * la nueva fila y enfoca la primera celda.
+   * En la siguiente etapa los catálogos usarán
+   * esta clase cuando su menú esté abierto.
    */
-  window.requestAnimationFrame(
-    () => {
-      masterEditorTableWrapper.scrollTop =
-        masterEditorTableWrapper.scrollHeight;
+  if (
+    currentInput.closest(
+      ".catalog-autocomplete-open",
+    )
+  ) {
+    return;
+  }
 
-      const firstInput =
-        newRow.querySelector(
-          "input.master-editor-cell",
+  const currentRow =
+    currentInput.closest("tr");
+
+  const rows = Array.from(
+    masterEditorTableBody.querySelectorAll(
+      "tr",
+    ),
+  );
+
+  const rowIndex =
+    rows.indexOf(currentRow);
+
+  const rowInputs =
+    getMasterRowInputs(currentRow);
+
+  const columnIndex =
+    rowInputs.indexOf(currentInput);
+
+  if (
+    rowIndex < 0 ||
+    columnIndex < 0
+  ) {
+    return;
+  }
+
+  if (event.key === "Enter") {
+    event.preventDefault();
+
+    /*
+     * Primero intenta avanzar dentro
+     * de la misma fila.
+     */
+    if (
+      focusMasterCell(
+        rows,
+        rowIndex,
+        columnIndex + 1,
+      )
+    ) {
+      return;
+    }
+
+    /*
+     * Si terminó la fila, intenta la primera
+     * celda de la siguiente.
+     */
+    if (
+      focusMasterCell(
+        rows,
+        rowIndex + 1,
+        0,
+      )
+    ) {
+      return;
+    }
+
+    /*
+     * Si está en la última celda de la última
+     * fila, crea una nueva.
+     */
+    addMasterEditorRow();
+
+    return;
+  }
+
+  if (event.key === "ArrowRight") {
+    if (!isCaretAtEnd(currentInput)) {
+      return;
+    }
+
+    const movedInsideRow =
+      focusMasterCell(
+        rows,
+        rowIndex,
+        columnIndex + 1,
+      );
+
+    const movedToNextRow =
+      movedInsideRow
+        ? false
+        : focusMasterCell(
+            rows,
+            rowIndex + 1,
+            0,
+          );
+
+    if (
+      movedInsideRow ||
+      movedToNextRow
+    ) {
+      event.preventDefault();
+    }
+
+    return;
+  }
+
+  if (event.key === "ArrowLeft") {
+    if (!isCaretAtStart(currentInput)) {
+      return;
+    }
+
+    const movedInsideRow =
+      focusMasterCell(
+        rows,
+        rowIndex,
+        columnIndex - 1,
+      );
+
+    if (movedInsideRow) {
+      event.preventDefault();
+      return;
+    }
+
+    const previousRow =
+      rows[rowIndex - 1];
+
+    const previousInputs =
+      getMasterRowInputs(
+        previousRow,
+      );
+
+    if (previousInputs.length === 0) {
+      return;
+    }
+
+    const previousLastInput =
+      previousInputs[
+        previousInputs.length - 1
+      ];
+
+    previousLastInput.focus();
+    event.preventDefault();
+
+    return;
+  }
+
+  if (event.key === "ArrowDown") {
+    if (
+      focusMasterCell(
+        rows,
+        rowIndex + 1,
+        columnIndex,
+      )
+    ) {
+      event.preventDefault();
+    }
+
+    return;
+  }
+
+  if (event.key === "ArrowUp") {
+    if (
+      focusMasterCell(
+        rows,
+        rowIndex - 1,
+        columnIndex,
+      )
+    ) {
+      event.preventDefault();
+    }
+  }
+};
+
+const parseMasterClipboardGrid = (
+  clipboardText,
+) => {
+  const normalizedText = String(
+    clipboardText || "",
+  )
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+
+  const rows =
+    normalizedText
+      .split("\n")
+      .map((row) =>
+        row.split("\t")
+      );
+
+  /*
+   * Excel normalmente agrega un salto de línea
+   * al final. Lo eliminamos sin borrar celdas
+   * vacías internas.
+   */
+  while (
+    rows.length > 0 &&
+    rows[rows.length - 1].every(
+      (cell) => cell === "",
+    )
+  ) {
+    rows.pop();
+  }
+
+  return rows;
+};
+
+const ensureMasterRowsForPaste = (
+  requiredRowIndex,
+) => {
+  let rows = Array.from(
+    masterEditorTableBody.querySelectorAll(
+      "tr",
+    ),
+  );
+
+  while (
+    rows.length <= requiredRowIndex
+  ) {
+    addMasterEditorRow({
+      focusFirstCell: false,
+      notifyChanges: false,
+    });
+
+    rows = Array.from(
+      masterEditorTableBody.querySelectorAll(
+        "tr",
+      ),
+    );
+  }
+
+  return rows;
+};
+
+const setMasterCellValue = (
+  input,
+  value,
+) => {
+  if (!input || input.disabled) {
+    return;
+  }
+
+  input.value =
+    value === null ||
+    value === undefined
+      ? ""
+      : String(value);
+
+  /*
+   * Los eventos permiten que la celda active
+   * el estado de cambios pendientes y, después,
+   * las validaciones o catálogos.
+   */
+  input.dispatchEvent(
+    new Event(
+      "input",
+      {
+        bubbles: true,
+      },
+    ),
+  );
+
+  input.dispatchEvent(
+    new Event(
+      "change",
+      {
+        bubbles: true,
+      },
+    ),
+  );
+};
+
+const handleMasterTablePaste = (
+  event,
+) => {
+  const currentInput =
+    event.target.closest(
+      "input.master-editor-cell",
+    );
+
+  if (
+    !currentInput ||
+    currentInput.disabled
+  ) {
+    return;
+  }
+
+  const clipboardText =
+    event.clipboardData?.getData(
+      "text/plain",
+    ) || "";
+
+  /*
+   * Si sólo es un valor sin filas ni columnas,
+   * dejamos que el navegador haga el pegado
+   * normal dentro del texto.
+   */
+  const isMultipleCellPaste =
+    clipboardText.includes("\t") ||
+    clipboardText.includes("\n") ||
+    clipboardText.includes("\r");
+
+  if (!isMultipleCellPaste) {
+    return;
+  }
+
+  const clipboardGrid =
+    parseMasterClipboardGrid(
+      clipboardText,
+    );
+
+  if (clipboardGrid.length === 0) {
+    return;
+  }
+
+  const currentRow =
+    currentInput.closest("tr");
+
+  const currentRows = Array.from(
+    masterEditorTableBody.querySelectorAll(
+      "tr",
+    ),
+  );
+
+  const startRowIndex =
+    currentRows.indexOf(
+      currentRow,
+    );
+
+  const currentRowInputs =
+    getMasterRowInputs(
+      currentRow,
+    );
+
+  const startColumnIndex =
+    currentRowInputs.indexOf(
+      currentInput,
+    );
+
+  if (
+    startRowIndex < 0 ||
+    startColumnIndex < 0
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+
+  let lastUpdatedInput = null;
+
+  clipboardGrid.forEach(
+    (
+      clipboardRow,
+      rowOffset,
+    ) => {
+      const targetRowIndex =
+        startRowIndex + rowOffset;
+
+      const rows =
+        ensureMasterRowsForPaste(
+          targetRowIndex,
         );
 
-      firstInput?.focus();
+      const targetRow =
+        rows[targetRowIndex];
+
+      const targetInputs =
+        getMasterRowInputs(
+          targetRow,
+        );
+
+      clipboardRow.forEach(
+        (
+          cellValue,
+          columnOffset,
+        ) => {
+          const targetColumnIndex =
+            startColumnIndex +
+            columnOffset;
+
+          const targetInput =
+            targetInputs[
+              targetColumnIndex
+            ];
+
+          /*
+           * Si Excel contiene más columnas que
+           * el archivo madre, se ignoran.
+           */
+          if (!targetInput) {
+            return;
+          }
+
+          setMasterCellValue(
+            targetInput,
+            cellValue,
+          );
+
+          lastUpdatedInput =
+            targetInput;
+        },
+      );
     },
   );
+
+  /*
+   * El evento input ya marca cambios, pero esta
+   * llamada asegura el estado incluso si alguna
+   * fila copiada sólo tenía valores vacíos.
+   */
+  markEditorDirty();
+
+  if (lastUpdatedInput) {
+    window.requestAnimationFrame(
+      () => {
+        lastUpdatedInput.focus({
+          preventScroll: true,
+        });
+
+        lastUpdatedInput.scrollIntoView({
+          behavior: "auto",
+          block: "nearest",
+          inline: "nearest",
+        });
+      },
+    );
+  }
 };
 
 const initializeMasterEditor = async () => {
@@ -698,9 +1242,8 @@ const initializeMasterEditor = async () => {
   }
 };
 
-document.addEventListener(
-  "DOMContentLoaded",
-  () => {
+document.addEventListener("DOMContentLoaded",() => {
+  
     masterEditorName.addEventListener(
       "input",
       markEditorDirty,
@@ -715,10 +1258,11 @@ document.addEventListener(
       },
     );
 
-    masterEditorAddRowButton.addEventListener(
-      "click",
-      addMasterEditorRow,
-    );
+    masterEditorAddRowButton.addEventListener("click",() => {addMasterEditorRow();});
+
+    masterEditorTableBody.addEventListener("keydown",handleMasterTableNavigation);
+
+    masterEditorTableBody.addEventListener("paste",handleMasterTablePaste);
 
     masterEditorBackLink.addEventListener(
       "click",
