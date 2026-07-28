@@ -38,11 +38,154 @@ let orderedMasterHeaders = [];
 const deletedMasterRecordIds =
   new Set();
 let pendingEditorNavigation = "";
+const masterCatalogState = {
+  unitOfMeasure: {
+    options: [],
+    optionsSet: new Set(),
+  },
+
+  countryOfOrigin: {
+    options: [],
+    optionsSet: new Set(),
+    nameToCode: new Map(),
+  },
+};
+
+let activeMasterCatalogInput = null;
+
+const MASTER_CATALOG_MAX_OPTIONS = 10;
 
 const MASTER_TYPE_LABELS = {
   finishedProduct: "Finished Goods",
   rawMaterial: "Raw Material",
 };
+
+const normalizeMasterCatalogValue = (
+  value,
+) => {
+  return String(value || "")
+    .trim()
+    .toUpperCase();
+};
+
+const normalizeMasterCountryName = (
+  value,
+) => {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(
+      /[\u0300-\u036f]/g,
+      "",
+    )
+    .toUpperCase()
+    .trim();
+};
+
+const applyMasterCatalogOptions = (
+  payload = {},
+) => {
+  Object.keys(
+    masterCatalogState,
+  ).forEach((catalogKey) => {
+    const receivedOptions =
+      Array.isArray(
+        payload[catalogKey],
+      )
+        ? payload[catalogKey]
+        : [];
+
+    const normalizedOptions =
+      receivedOptions
+        .map(
+          normalizeMasterCatalogValue,
+        )
+        .filter(Boolean);
+
+    const uniqueOptions = Array.from(
+      new Set(normalizedOptions),
+    ).sort((left, right) =>
+      left.localeCompare(right),
+    );
+
+    masterCatalogState[
+      catalogKey
+    ].options = uniqueOptions;
+
+    masterCatalogState[
+      catalogKey
+    ].optionsSet = new Set(
+      uniqueOptions,
+    );
+  });
+
+  const receivedCountryNames =
+    payload.countryNameToCode &&
+    typeof payload.countryNameToCode ===
+      "object" &&
+    !Array.isArray(
+      payload.countryNameToCode,
+    )
+      ? Object.entries(
+          payload.countryNameToCode,
+        )
+      : [];
+
+  const normalizedCountryNames =
+    receivedCountryNames
+      .map(([name, code]) => [
+        normalizeMasterCountryName(
+          name,
+        ),
+        normalizeMasterCatalogValue(
+          code,
+        ),
+      ])
+      .filter(
+        ([name, code]) =>
+          name && code,
+      );
+
+  masterCatalogState
+    .countryOfOrigin
+    .nameToCode = new Map(
+      normalizedCountryNames,
+    );
+};
+
+const loadMasterCatalogOptions =
+  async () => {
+    try {
+      const response = await fetch(
+        "/api/files/catalog-options",
+      );
+
+      const data = await response
+        .json()
+        .catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.message ||
+            "No fue posible cargar los catálogos.",
+        );
+      }
+
+      applyMasterCatalogOptions(
+        data,
+      );
+
+      return true;
+    } catch (error) {
+      console.warn(
+        "No fue posible cargar los catálogos del editor:",
+        error,
+      );
+
+      applyMasterCatalogOptions({});
+
+      return false;
+    }
+  };
 
 const canEditMasterContent = () => {
   return ["admin", "user"].includes(
@@ -268,6 +411,35 @@ const getOrderedHeaders = (headers) => {
     );
 };
 
+const getMasterCatalogKey = (
+  header,
+) => {
+  const mappedField =
+    header?.mappedField || "";
+
+  if (
+    mappedField ===
+    "unitOfMeasure"
+  ) {
+    return "unitOfMeasure";
+  }
+
+  if (
+    mappedField ===
+      "countryOfOrigin" ||
+    mappedField ===
+      "fdaCountryOfOrigin"
+  ) {
+    return "countryOfOrigin";
+  }
+
+  /*
+   * La columna independiente "uom"
+   * permanece como texto libre.
+   */
+  return "";
+};
+
 const renderMasterMetadata = (masterFile) => {
   masterEditorType.value =
     MASTER_TYPE_LABELS[masterFile.masterType] ||
@@ -348,6 +520,661 @@ const createHeaderRow = (headers) => {
   );
 
   return tableRow;
+};
+
+const getMasterCatalogUi = (
+  input,
+) => {
+  if (
+    input._masterCatalogUi
+  ) {
+    return input._masterCatalogUi;
+  }
+
+  const parent =
+    input.parentNode;
+
+  if (!parent) {
+    return null;
+  }
+
+  const wrapper =
+    document.createElement("div");
+
+  wrapper.className =
+    "catalog-autocomplete";
+
+  const toggle =
+    document.createElement("button");
+
+  toggle.type = "button";
+
+  toggle.className =
+    "catalog-autocomplete-toggle";
+
+  toggle.setAttribute(
+    "aria-label",
+    "Mostrar opciones",
+  );
+
+  toggle.innerHTML = "&#9662;";
+
+  const menu =
+    document.createElement("div");
+
+  menu.className =
+    "catalog-autocomplete-menu hidden";
+
+  parent.insertBefore(
+    wrapper,
+    input,
+  );
+
+  wrapper.appendChild(input);
+  wrapper.appendChild(toggle);
+  wrapper.appendChild(menu);
+
+  input.classList.add(
+    "catalog-autocomplete-input",
+  );
+
+  input.autocomplete = "off";
+  input.spellcheck = false;
+
+  input._masterCatalogUi = {
+    wrapper,
+    toggle,
+    menu,
+  };
+
+  return input._masterCatalogUi;
+};
+
+const closeMasterCatalog = (
+  input,
+) => {
+  const ui =
+    input?._masterCatalogUi;
+
+  if (!ui) {
+    return;
+  }
+
+  ui.menu.classList.add(
+    "hidden",
+  );
+
+  ui.wrapper.classList.remove(
+    "catalog-autocomplete-open",
+  );
+
+  delete input.dataset
+    .catalogActiveIndex;
+
+  if (
+    activeMasterCatalogInput ===
+    input
+  ) {
+    activeMasterCatalogInput =
+      null;
+  }
+};
+
+const closeActiveMasterCatalog = (
+  exceptInput = null,
+) => {
+  if (
+    activeMasterCatalogInput &&
+    activeMasterCatalogInput !==
+      exceptInput
+  ) {
+    closeMasterCatalog(
+      activeMasterCatalogInput,
+    );
+  }
+};
+
+const getFilteredMasterCatalogOptions = (
+  input,
+) => {
+  const catalogKey =
+    input.dataset.catalogKey;
+
+  const catalog =
+    masterCatalogState[
+      catalogKey
+    ];
+
+  if (!catalog) {
+    return [];
+  }
+
+  const query =
+    normalizeMasterCatalogValue(
+      input.value,
+    );
+
+  if (!query) {
+    return catalog.options;
+  }
+
+  const startsWith = [];
+  const includes = [];
+
+  catalog.options.forEach(
+    (option) => {
+      if (
+        option.startsWith(query)
+      ) {
+        startsWith.push(option);
+      } else if (
+        option.includes(query)
+      ) {
+        includes.push(option);
+      }
+    },
+  );
+
+  return [
+    ...startsWith,
+    ...includes,
+  ];
+};
+
+const updateMasterCatalogActiveOption = (
+  input,
+  requestedIndex,
+) => {
+  const ui =
+    input._masterCatalogUi;
+
+  if (!ui) {
+    return;
+  }
+
+  const optionButtons =
+    Array.from(
+      ui.menu.querySelectorAll(
+        ".catalog-autocomplete-option",
+      ),
+    );
+
+  if (
+    optionButtons.length === 0
+  ) {
+    return;
+  }
+
+  const boundedIndex =
+    Math.max(
+      0,
+      Math.min(
+        requestedIndex,
+        optionButtons.length - 1,
+      ),
+    );
+
+  input.dataset.catalogActiveIndex =
+    String(boundedIndex);
+
+  optionButtons.forEach(
+    (button, index) => {
+      button.classList.toggle(
+        "is-active",
+        index === boundedIndex,
+      );
+    },
+  );
+  optionButtons[
+    boundedIndex
+  ]?.scrollIntoView({
+    block: "nearest",
+  });
+};
+
+const selectMasterCatalogOption = (
+  input,
+  option,
+) => {
+  input.value =
+    normalizeMasterCatalogValue(
+      option,
+    );
+  input.classList.remove(
+    "master-editor-cell-warning",
+  );
+  input.setCustomValidity("");
+  closeMasterCatalog(input);
+  markEditorDirty();
+  input.dispatchEvent(
+    new Event(
+      "change",
+      {
+        bubbles: true,
+      },
+    ),
+  );
+};
+
+const renderMasterCatalog = (
+  input,
+) => {
+  const ui =
+    input._masterCatalogUi;
+  if (!ui) {
+    return;
+  }
+  closeActiveMasterCatalog(
+    input,
+  );
+
+  const options =
+    getFilteredMasterCatalogOptions(
+      input,
+    );
+
+  ui.menu.innerHTML = "";
+
+  if (options.length === 0) {
+    closeMasterCatalog(input);
+    return;
+  }
+
+  options.forEach(
+    (option, index) => {
+      const optionButton = document.createElement(
+          "button",
+        );
+      optionButton.type = "button";
+      optionButton.className = "catalog-autocomplete-option";
+      optionButton.textContent = option;
+      optionButton.addEventListener(
+        "mousedown",
+        (event) => {
+          event.preventDefault();
+          selectMasterCatalogOption(
+            input,
+            option,
+          );
+        },
+      );
+
+      if (index === 0) {
+        optionButton.classList.add(
+          "is-active",
+        );
+      }
+      ui.menu.appendChild(
+        optionButton,
+      );
+    },
+  );
+
+  ui.menu.style.maxHeight =
+    `${
+      MASTER_CATALOG_MAX_OPTIONS *
+      36
+    }px`;
+  ui.menu.classList.remove(
+    "hidden",
+  );
+  ui.wrapper.classList.add(
+    "catalog-autocomplete-open",
+  );
+  activeMasterCatalogInput =
+    input;
+  updateMasterCatalogActiveOption(
+    input,
+    0,
+  );
+};
+
+const validateMasterCatalogInput = (
+  input,
+) => {
+  const catalogKey =
+    input.dataset.catalogKey;
+  const catalog =
+    masterCatalogState[
+      catalogKey
+    ];
+  if (!catalog) {
+    return true;
+  }
+
+  const originalValue =
+    String(input.value || "");
+  const trimmedValue =
+    originalValue.trim();
+  if (!trimmedValue) {
+    input.value = "";
+    input.classList.remove(
+      "master-editor-cell-warning",
+    );
+    input.setCustomValidity("");
+    return true;
+  }
+  if (
+    catalog.optionsSet.size === 0
+  ) {
+    input.classList.remove(
+      "master-editor-cell-warning",
+    );
+
+    input.setCustomValidity("");
+
+    return true;
+  }
+
+  if (
+    catalogKey ===
+    "countryOfOrigin"
+  ) {
+    const possibleCode =
+      normalizeMasterCatalogValue(
+        trimmedValue,
+      );
+
+    const codeByName =
+      catalog.nameToCode.get(
+        normalizeMasterCountryName(
+          trimmedValue,
+        ),
+      );
+
+    const resolvedCode =
+      catalog.optionsSet.has(
+        possibleCode,
+      )
+        ? possibleCode
+        : codeByName;
+
+    if (resolvedCode) {
+      input.value =
+        resolvedCode;
+
+      input.classList.remove(
+        "master-editor-cell-warning",
+      );
+
+      input.setCustomValidity("");
+
+      return true;
+    }
+
+    /*
+     * No modificamos el texto desconocido.
+     * El usuario podrá corregirlo manualmente.
+     */
+    input.value =
+      originalValue;
+
+    input.classList.add(
+      "master-editor-cell-warning",
+    );
+
+    input.setCustomValidity(
+      "Selecciona un Country of Origin válido.",
+    );
+
+    return false;
+  }
+
+  const normalizedValue =
+    normalizeMasterCatalogValue(
+      trimmedValue,
+    );
+
+  input.value =
+    normalizedValue;
+
+  if (
+    catalog.optionsSet.size > 0 &&
+    !catalog.optionsSet.has(
+      normalizedValue,
+    )
+  ) {
+    input.setCustomValidity(
+      "Selecciona un código válido de Unit of Measure.",
+    );
+
+    return false;
+  }
+
+  input.setCustomValidity("");
+
+  return true;
+};
+
+const bindMasterCatalogInput = (
+  input,
+  catalogKey,
+) => {
+  if (
+    !input ||
+    !catalogKey
+  ) {
+    return;
+  }
+
+  input.dataset.catalogKey = catalogKey;
+  const ui = getMasterCatalogUi(input);
+  if (
+    catalogKey ===
+    "countryOfOrigin"
+  ) {
+    validateMasterCatalogInput(
+      input,
+    );
+  }
+  if (
+    !ui ||
+    input.dataset
+      .masterCatalogBound ===
+      "true"
+  ) {
+    return;
+  }
+  input.addEventListener(
+    "input",
+    (event) => {
+      if (
+        catalogKey !==
+        "countryOfOrigin"
+      ) {
+        input.value =
+          normalizeMasterCatalogValue(
+            input.value,
+          );
+      }
+
+      input.classList.remove(
+        "master-editor-cell-warning",
+      );
+
+      input.setCustomValidity("");
+
+      /*
+      * El pegado múltiple produce eventos
+      * sintéticos. Validamos cada país pegado.
+      */
+      if (
+        !event.isTrusted &&
+        catalogKey ===
+          "countryOfOrigin"
+      ) {
+        validateMasterCatalogInput(
+          input,
+        );
+
+        return;
+      }
+
+      if (event.isTrusted) {
+        renderMasterCatalog(
+          input,
+        );
+      }
+    },
+  );
+
+  input.addEventListener(
+    "focus",
+    () => {
+      renderMasterCatalog(input);
+    },
+  );
+
+  input.addEventListener(
+    "click",
+    () => {
+      renderMasterCatalog(input);
+    },
+  );
+
+  input.addEventListener(
+    "blur",
+    () => {
+      window.setTimeout(
+        () => {
+          closeMasterCatalog(
+            input,
+          );
+
+          validateMasterCatalogInput(
+            input,
+          );
+        },
+        120,
+      );
+    },
+  );
+
+  input.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        ui.menu.classList.contains(
+          "hidden",
+        )
+      ) {
+        return;
+      }
+
+      const optionButtons =
+        Array.from(
+          ui.menu.querySelectorAll(
+            ".catalog-autocomplete-option",
+          ),
+        );
+
+      if (
+        optionButtons.length === 0
+      ) {
+        return;
+      }
+
+      const currentIndex =
+        Number.parseInt(
+          input.dataset
+            .catalogActiveIndex ||
+            "0",
+          10,
+        );
+
+      if (
+        event.key ===
+        "ArrowDown"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        updateMasterCatalogActiveOption(
+          input,
+          currentIndex + 1,
+        );
+
+        return;
+      }
+
+      if (
+        event.key ===
+        "ArrowUp"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        updateMasterCatalogActiveOption(
+          input,
+          currentIndex - 1,
+        );
+
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const activeOption =
+          optionButtons[
+            currentIndex
+          ] ||
+          optionButtons[0];
+
+        if (activeOption) {
+          selectMasterCatalogOption(
+            input,
+            activeOption.textContent,
+          );
+        }
+
+        return;
+      }
+
+      if (
+        event.key === "Escape"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        closeMasterCatalog(input);
+      }
+    },
+    true,
+  );
+
+  ui.toggle.addEventListener(
+    "mousedown",
+    (event) => {
+      event.preventDefault();
+    },
+  );
+
+  ui.toggle.addEventListener(
+    "click",
+    () => {
+      const wasHidden =
+        ui.menu.classList.contains(
+          "hidden",
+        );
+
+      input.focus();
+
+      if (wasHidden) {
+        renderMasterCatalog(
+          input,
+        );
+      } else {
+        closeMasterCatalog(
+          input,
+        );
+      }
+    },
+  );
+
+  input.dataset.masterCatalogBound =
+    "true";
 };
 
 const createRecordRow = (
@@ -435,6 +1262,19 @@ const createRecordRow = (
     );
 
     tableCell.appendChild(input);
+
+    const catalogKey =
+      getMasterCatalogKey(
+        header,
+      );
+
+    if (catalogKey) {
+      bindMasterCatalogInput(
+        input,
+        catalogKey,
+      );
+    }
+
     tableRow.appendChild(tableCell);
   });
 
@@ -1206,6 +2046,8 @@ const initializeMasterEditor = async () => {
       await loadMasterEditorData(
         masterFileId,
       );
+    
+    await loadMasterCatalogOptions();
 
     renderMasterMetadata(
       editorData.masterFile,
@@ -1243,7 +2085,7 @@ const initializeMasterEditor = async () => {
 };
 
 document.addEventListener("DOMContentLoaded",() => {
-  
+
     masterEditorName.addEventListener(
       "input",
       markEditorDirty,

@@ -179,6 +179,26 @@ button.master-editor-row-delete svg {
   pointer-events: none;
 }
 
+.master-editor-table .catalog-autocomplete {
+  width: 100%;
+  min-width: 150px;
+}
+
+.master-editor-table.data-table
+  input.master-editor-cell.catalog-autocomplete-input {
+  padding: 8px 34px 8px 8px;
+}
+
+.master-editor-table.data-table
+  input.master-editor-cell.master-editor-cell-warning {
+  background-color: #fff8d8;
+}
+
+.master-editor-table.data-table
+  input.master-editor-cell.master-editor-cell-warning:focus {
+  background-color: #fff3bf;
+}
+
 @media (max-width: 800px) {
   .master-editor-container {
     width: 95%;

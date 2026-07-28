@@ -398,7 +398,19 @@ function loadCatalogOnce() {
             if (!code) continue;
 
             codeToName.set(code, name);
-            nameToCode.set(normalizeName(name), code);
+
+            const normalizedName =
+              normalizeName(name);
+
+            if (
+              normalizedName &&
+              normalizedName !== "NULL"
+            ) {
+              nameToCode.set(
+                normalizedName,
+                code,
+              );
+            }
             overrides += 1;
           }
 
@@ -460,6 +472,15 @@ function nameToCodeFn(name) {
   return nameToCode.get(normalizeName(name)) || null;
 }
 
+function getCountryNameToCode() {
+  const { nameToCode } =
+    loadCatalogOnce();
+
+  return Object.fromEntries(
+    nameToCode.entries(),
+  );
+}
+
 function getCountryOptions() {
   const { options } = loadCatalogOnce();
   return options.slice();
@@ -471,5 +492,6 @@ module.exports = {
   isValidCountryCode,
   codeToName: codeToNameFn,
   nameToCode: nameToCodeFn,
+  getCountryNameToCode,
   getCountryOptions,
 };

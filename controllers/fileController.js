@@ -14,7 +14,10 @@ const BillOfMaterials = require("../models/BOM");
 const RawMaterial = require("../models/RawMaterial");
 const SPLScrap = require("../models/SPLScrap");
 const { getUOMOptions } = require("../data/uomCatalog");
-const { getCountryOptions } = require("../data/countryCatalog");
+const {
+  getCountryOptions,
+  getCountryNameToCode,
+} = require("../data/countryCatalog");
 const { convertXlsToXlsx } = require("../utils/xlsConverter");
 
 // Middleware de Multer (configúralo una vez)
@@ -567,10 +570,12 @@ const getManualCatalogOptions = async (_req, res) => {
   try {
     const unitOfMeasure = getUOMOptions().map((option) => option.code);
     const countryOfOrigin = getCountryOptions();
+    const countryNameToCode = getCountryNameToCode();
 
     return res.status(200).json({
       unitOfMeasure,
       countryOfOrigin,
+      countryNameToCode,
     });
   } catch (error) {
     console.error("Error al cargar catalogos manuales:", error);
