@@ -57,6 +57,23 @@ router.get(
 );
 
 /**
+ * PUT /api/master-files/:masterFileId/editor
+ *
+ * Administradores:
+ * nombre, sedes y contenido.
+ *
+ * Usuarios:
+ * únicamente contenido de archivos
+ * correspondientes a su sede.
+ */
+router.put(
+  "/:masterFileId/editor",
+  USER_PROTECTED,
+  masterFileController
+    .updateMasterFileFromEditor,
+);
+
+/**
  * GET /api/master-files/:masterFileId/download
  *
  * Administradores: cualquier archivo.

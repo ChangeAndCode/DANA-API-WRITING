@@ -398,10 +398,8 @@ function loadCatalogOnce() {
             if (!code) continue;
 
             codeToName.set(code, name);
-
             const normalizedName =
               normalizeName(name);
-
             if (
               normalizedName &&
               normalizedName !== "NULL"

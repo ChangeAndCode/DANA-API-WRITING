@@ -366,6 +366,121 @@ const getMasterFileEditorData = async (req, res) => {
 };
 
 /**
+ * Guarda los cambios enviados desde el editor.
+ */
+const updateMasterFileFromEditor =
+  async (
+    req,
+    res,
+  ) => {
+    try {
+      const result =
+        await masterFileService
+          .updateMasterFileFromEditor({
+            masterFileId:
+              req.params.masterFileId,
+
+            revision:
+              req.body?.revision,
+
+            name:
+              req.body?.name,
+
+            sites:
+              parseSitesField(
+                req.body?.sites,
+              ),
+
+            rows:
+              req.body?.rows,
+
+            deletedRecordIds:
+              req.body
+                ?.deletedRecordIds,
+
+            user:
+              req.user,
+          });
+
+      const masterFile =
+        result.masterFile;
+
+      return res.status(200).json({
+        message:
+          "Los cambios del archivo madre se guardaron correctamente.",
+
+        masterFile: {
+          id:
+            masterFile._id,
+
+          name:
+            masterFile.name,
+
+          masterType:
+            masterFile.masterType,
+
+          sites:
+            masterFile.sites,
+
+          revision:
+            masterFile.revision,
+
+          recordCount:
+            masterFile.recordCount,
+
+          warningCount:
+            masterFile.warningCount,
+
+          updatedBy:
+            masterFile.updatedBy,
+
+          updatedAt:
+            masterFile.updatedAt,
+        },
+
+        insertedRecordCount:
+          result.insertedRecordCount,
+
+        updatedRecordCount:
+          result.updatedRecordCount,
+
+        deletedRecordCount:
+          result.deletedRecordCount,
+
+        warningCount:
+          result.warningCount,
+      });
+    } catch (error) {
+      const statusCode =
+        Number.isInteger(
+          error.statusCode,
+        )
+          ? error.statusCode
+          : 500;
+
+      if (statusCode >= 500) {
+        console.error(
+          "[MasterFiles] Error al guardar editor:",
+          error,
+        );
+      }
+
+      return res
+        .status(statusCode)
+        .json({
+          code:
+            error.code ||
+            "MASTER_EDITOR_UPDATE_ERROR",
+
+          message:
+            statusCode < 500
+              ? error.message
+              : "Error interno al guardar el archivo madre.",
+        });
+    }
+  };
+
+/**
  * Descarga una reconstrucción del archivo madre
  * sin imágenes.
  */
@@ -691,6 +806,7 @@ module.exports = {
   parseSitesField,
   listMasterFiles,
   getMasterFileEditorData,
+  updateMasterFileFromEditor,
   downloadMasterFile,
   copyMasterFile,
   deleteMasterFile,

@@ -6,6 +6,7 @@ const masterFileRepository = require(
 );
 const {
   parseMasterFileBuffer,
+  buildMasterRecordFromEditorRow,
 } = require("../utils/masterFileParser");
 const {
   createMasterFileWorkbook,
@@ -130,6 +131,127 @@ const getAdminUserId = (user) => {
   }
 
   return userId;
+};
+
+/**
+ * Obtiene el ID de un administrador o usuario
+ * autorizado para editar contenido.
+ */
+const getMasterEditorUserId = (
+  user,
+) => {
+  if (!user) {
+    throw createMasterServiceError(
+      "MASTER_AUTH_REQUIRED",
+      "Debes iniciar sesión para editar archivos madre.",
+      401,
+    );
+  }
+
+  if (user.isActive !== true) {
+    throw createMasterServiceError(
+      "MASTER_USER_INACTIVE",
+      "La cuenta no está activa.",
+      403,
+    );
+  }
+
+  if (
+    !["admin", "user"].includes(
+      user.role,
+    )
+  ) {
+    throw createMasterServiceError(
+      "MASTER_ROLE_INVALID",
+      "El usuario no tiene permisos para editar archivos madre.",
+      403,
+    );
+  }
+
+  const userId =
+    user._id || user.id;
+
+  if (
+    !userId ||
+    !mongoose.Types.ObjectId.isValid(
+      userId,
+    )
+  ) {
+    throw createMasterServiceError(
+      "MASTER_USER_ID_INVALID",
+      "El usuario autenticado no tiene un ID válido.",
+      401,
+    );
+  }
+
+  return userId;
+};
+
+/**
+ * Vuelve a calcular las advertencias por
+ * Part Numbers repetidos después de editar.
+ */
+const applyEditorDuplicateWarnings = (
+  records,
+) => {
+  const recordsByPartNumber =
+    new Map();
+
+  records.forEach((record) => {
+    record.validationWarnings =
+      Array.isArray(
+        record.validationWarnings,
+      )
+        ? record.validationWarnings.filter(
+            (warning) =>
+              warning.code !==
+              "DUPLICATE_PART_NUMBER",
+          )
+        : [];
+
+    const partNumber =
+      record.partNumberNormalized;
+
+    if (
+      !recordsByPartNumber.has(
+        partNumber,
+      )
+    ) {
+      recordsByPartNumber.set(
+        partNumber,
+        [],
+      );
+    }
+
+    recordsByPartNumber
+      .get(partNumber)
+      .push(record);
+  });
+
+  for (const [
+    partNumber,
+    matches,
+  ] of recordsByPartNumber) {
+    if (matches.length < 2) {
+      continue;
+    }
+
+    matches.forEach((record) => {
+      record.validationWarnings.push({
+        code:
+          "DUPLICATE_PART_NUMBER",
+
+        message:
+          `El Part Number "${partNumber}" aparece ${matches.length} veces en el archivo.`,
+
+        field:
+          "Part Number",
+
+        originalValue:
+          record.partNumber,
+      });
+    });
+  }
 };
 
 /**
@@ -550,6 +672,597 @@ const getMasterFileEditorData = async ({
 };
 
 /**
+ * Guarda los cambios realizados desde el editor.
+ */
+const updateMasterFileFromEditor =
+  async ({
+    masterFileId,
+    revision,
+    name,
+    sites,
+    rows,
+    deletedRecordIds = [],
+    user,
+  }) => {
+    const editorUserId =
+      getMasterEditorUserId(user);
+
+    if (
+      !masterFileId ||
+      !mongoose.Types.ObjectId.isValid(
+        masterFileId,
+      )
+    ) {
+      throw createMasterServiceError(
+        "MASTER_FILE_ID_INVALID",
+        "El identificador del archivo madre no es válido.",
+      );
+    }
+
+    const expectedRevision =
+      Number(revision);
+
+    if (
+      !Number.isInteger(
+        expectedRevision,
+      ) ||
+      expectedRevision < 1
+    ) {
+      throw createMasterServiceError(
+        "MASTER_REVISION_INVALID",
+        "La revisión del archivo madre no es válida.",
+      );
+    }
+
+    if (!Array.isArray(rows)) {
+      throw createMasterServiceError(
+        "MASTER_EDITOR_ROWS_INVALID",
+        "Las filas del editor no son válidas.",
+      );
+    }
+
+    if (rows.length === 0) {
+      throw createMasterServiceError(
+        "MASTER_EDITOR_ROWS_REQUIRED",
+        "El archivo madre debe conservar al menos una fila.",
+      );
+    }
+
+    if (rows.length > 100000) {
+      throw createMasterServiceError(
+        "MASTER_EDITOR_ROWS_LIMIT",
+        "El archivo madre excede el límite de filas permitido.",
+        413,
+      );
+    }
+
+    if (
+      !Array.isArray(
+        deletedRecordIds,
+      )
+    ) {
+      throw createMasterServiceError(
+        "MASTER_DELETED_RECORDS_INVALID",
+        "La lista de filas eliminadas no es válida.",
+      );
+    }
+
+    const normalizedDeletedIds = [
+      ...new Set(
+        deletedRecordIds.map(
+          (recordId) =>
+            String(
+              recordId || "",
+            ).trim(),
+        ),
+      ),
+    ].filter(Boolean);
+
+    normalizedDeletedIds.forEach(
+      (recordId) => {
+        if (
+          !mongoose.Types.ObjectId.isValid(
+            recordId,
+          )
+        ) {
+          throw createMasterServiceError(
+            "MASTER_RECORD_ID_INVALID",
+            `El registro eliminado "${recordId}" no tiene un ID válido.`,
+          );
+        }
+      },
+    );
+
+    const normalizedRows =
+      rows.map((row, index) => {
+        const recordId =
+          String(
+            row?.id || "",
+          ).trim();
+
+        if (
+          recordId &&
+          !mongoose.Types.ObjectId.isValid(
+            recordId,
+          )
+        ) {
+          throw createMasterServiceError(
+            "MASTER_RECORD_ID_INVALID",
+            `La fila ${index + 1} no tiene un ID válido.`,
+          );
+        }
+
+        if (
+          !Array.isArray(
+            row?.cells,
+          )
+        ) {
+          throw createMasterServiceError(
+            "MASTER_EDITOR_CELLS_INVALID",
+            `Las celdas de la fila ${index + 1} no son válidas.`,
+          );
+        }
+
+        return {
+          id:
+            recordId,
+          cells:
+            row.cells,
+          editorRow:
+            index + 1,
+        };
+      });
+
+    const receivedRecordIds =
+      normalizedRows
+        .map((row) => row.id)
+        .filter(Boolean);
+
+    if (
+      new Set(
+        receivedRecordIds,
+      ).size !==
+      receivedRecordIds.length
+    ) {
+      throw createMasterServiceError(
+        "MASTER_RECORD_ID_DUPLICATE",
+        "El editor envió una fila existente más de una vez.",
+      );
+    }
+
+    const deletedIdsSet =
+      new Set(
+        normalizedDeletedIds,
+      );
+
+    const conflictingRecordId =
+      receivedRecordIds.find(
+        (recordId) =>
+          deletedIdsSet.has(
+            recordId,
+          ),
+      );
+
+    if (conflictingRecordId) {
+      throw createMasterServiceError(
+        "MASTER_RECORD_STATE_CONFLICT",
+        "Una fila no puede actualizarse y eliminarse al mismo tiempo.",
+      );
+    }
+
+    const session =
+      await mongoose.startSession();
+
+    let updateResult = null;
+
+    try {
+      await session.withTransaction(
+        async () => {
+          const masterFile =
+            await masterFileRepository
+              .findMasterFileById(
+                masterFileId,
+                session,
+              );
+
+          if (!masterFile) {
+            throw createMasterServiceError(
+              "MASTER_FILE_NOT_FOUND",
+              "El archivo madre no existe.",
+              404,
+            );
+          }
+
+          assertMasterFileAccess(
+            masterFile,
+            user,
+          );
+
+          if (
+            masterFile.status !==
+            "ready"
+          ) {
+            throw createMasterServiceError(
+              "MASTER_FILE_NOT_READY",
+              "El archivo madre todavía no está disponible.",
+              409,
+            );
+          }
+
+          if (
+            Number(
+              masterFile.revision,
+            ) !== expectedRevision
+          ) {
+            throw createMasterServiceError(
+              "MASTER_REVISION_CONFLICT",
+              "El archivo fue modificado por otro usuario. Recarga la página antes de continuar.",
+              409,
+            );
+          }
+
+          const currentRecords =
+            await masterFileRepository
+              .findActiveMasterRecordsForUpdate(
+                masterFileId,
+                session,
+              );
+
+          const highestSourceRecord =
+            await masterFileRepository
+              .findHighestMasterRecordSourceRow(
+                masterFileId,
+                session,
+              );
+
+          const currentRecordsById =
+            new Map(
+              currentRecords.map(
+                (record) => [
+                  String(
+                    record._id,
+                  ),
+                  record,
+                ],
+              ),
+            );
+
+          normalizedDeletedIds.forEach(
+            (recordId) => {
+              if (
+                !currentRecordsById.has(
+                  recordId,
+                )
+              ) {
+                throw createMasterServiceError(
+                  "MASTER_RECORD_NOT_FOUND",
+                  "Una de las filas eliminadas ya no existe o pertenece a otro archivo.",
+                  409,
+                );
+              }
+            },
+          );
+
+          receivedRecordIds.forEach(
+            (recordId) => {
+              if (
+                !currentRecordsById.has(
+                  recordId,
+                )
+              ) {
+                throw createMasterServiceError(
+                  "MASTER_RECORD_NOT_FOUND",
+                  "Una de las filas editadas ya no existe o pertenece a otro archivo.",
+                  409,
+                );
+              }
+            },
+          );
+
+          const receivedIdsSet =
+            new Set(
+              receivedRecordIds,
+            );
+
+          currentRecords.forEach(
+            (record) => {
+              const recordId =
+                String(record._id);
+
+              if (
+                !receivedIdsSet.has(
+                  recordId,
+                ) &&
+                !deletedIdsSet.has(
+                  recordId,
+                )
+              ) {
+                throw createMasterServiceError(
+                  "MASTER_RECORD_SET_INCOMPLETE",
+                  "El contenido enviado por el editor está incompleto. Recarga la página.",
+                  409,
+                );
+              }
+            },
+          );
+
+          const isAdmin =
+            user.role === "admin";
+
+          const nextName = isAdmin
+            ? String(
+                name || "",
+              ).trim()
+            : masterFile.name;
+
+          if (!nextName) {
+            throw createMasterServiceError(
+              "MASTER_NAME_REQUIRED",
+              "El nombre del archivo madre es obligatorio.",
+            );
+          }
+
+          if (
+            nextName.length > 150
+          ) {
+            throw createMasterServiceError(
+              "MASTER_NAME_TOO_LONG",
+              "El nombre no puede exceder 150 caracteres.",
+            );
+          }
+
+          const nextSites = isAdmin
+            ? normalizeMasterSites(
+                sites,
+              )
+            : normalizeMasterSites(
+                masterFile.sites,
+              );
+
+          let nextSourceRow =
+            Math.max(
+              Number(
+                highestSourceRecord
+                  ?.sourceRow,
+              ) || 0,
+              Number(
+                masterFile.headerRow,
+              ) || 0,
+            );
+
+          const preparedRows =
+            normalizedRows.map(
+              (receivedRow) => {
+                const currentRecord =
+                  receivedRow.id
+                    ? currentRecordsById.get(
+                        receivedRow.id,
+                      )
+                    : null;
+
+                const sourceRow =
+                  currentRecord
+                    ? Number(
+                        currentRecord
+                          .sourceRow,
+                      )
+                    : ++nextSourceRow;
+
+                let recordData;
+
+                try {
+                  recordData =
+                    buildMasterRecordFromEditorRow({
+                      masterType:
+                        masterFile.masterType,
+                      headers:
+                        masterFile.headers,
+                      cells:
+                        receivedRow.cells,
+                      sourceRow,
+                    });
+                } catch (error) {
+                  if (
+                    !error.statusCode
+                  ) {
+                    error.statusCode =
+                      400;
+                  }
+
+                  throw error;
+                }
+
+                return {
+                  id:
+                    receivedRow.id,
+                  recordData,
+                };
+              },
+            );
+
+          const finalRecords =
+            preparedRows.map(
+              (preparedRow) =>
+                preparedRow.recordData,
+            );
+
+          applyEditorDuplicateWarnings(
+            finalRecords,
+          );
+
+          const now =
+            new Date();
+
+          const operations =
+            preparedRows.map(
+              (preparedRow) => {
+                const recordData =
+                  preparedRow.recordData;
+
+                if (preparedRow.id) {
+                  return {
+                    updateOne: {
+                      filter: {
+                        _id:
+                          preparedRow.id,
+                        masterFileId,
+                        isDeleted:
+                          false,
+                      },
+
+                      update: {
+                        $set: {
+                          ...recordData,
+                          sites:
+                            nextSites,
+                          updatedBy:
+                            editorUserId,
+                          isDeleted:
+                            false,
+                        },
+
+                        $unset: {
+                          deletedAt: "",
+                          deletedBy: "",
+                        },
+                      },
+                    },
+                  };
+                }
+
+                return {
+                  insertOne: {
+                    document: {
+                      ...recordData,
+                      masterFileId,
+                      sites:
+                        nextSites,
+                      createdBy:
+                        editorUserId,
+                      updatedBy:
+                        editorUserId,
+                      isDeleted:
+                        false,
+                    },
+                  },
+                };
+              },
+            );
+
+          normalizedDeletedIds.forEach(
+            (recordId) => {
+              operations.push({
+                updateOne: {
+                  filter: {
+                    _id:
+                      recordId,
+                    masterFileId,
+                    isDeleted:
+                      false,
+                  },
+
+                  update: {
+                    $set: {
+                      isDeleted:
+                        true,
+                      deletedAt:
+                        now,
+                      deletedBy:
+                        editorUserId,
+                      updatedBy:
+                        editorUserId,
+                    },
+                  },
+                },
+              });
+            },
+          );
+
+          await masterFileRepository
+            .bulkWriteMasterRecords(
+              operations,
+              session,
+            );
+
+          const warningCount =
+            finalRecords.reduce(
+              (
+                totalWarnings,
+                record,
+              ) =>
+                totalWarnings +
+                (
+                  record
+                    .validationWarnings
+                    ?.length || 0
+                ),
+              0,
+            );
+
+          const updatedMasterFile =
+            await masterFileRepository
+              .updateMasterFileByIdAndRevision(
+                masterFileId,
+                expectedRevision,
+                {
+                  name:
+                    nextName,
+                  sites:
+                    nextSites,
+                  recordCount:
+                    finalRecords.length,
+                  warningCount,
+                  updatedBy:
+                    editorUserId,
+                },
+                session,
+              );
+
+          if (!updatedMasterFile) {
+            throw createMasterServiceError(
+              "MASTER_REVISION_CONFLICT",
+              "El archivo fue modificado por otro usuario. Recarga la página.",
+              409,
+            );
+          }
+
+          updateResult = {
+            masterFile:
+              updatedMasterFile,
+
+            insertedRecordCount:
+              preparedRows.filter(
+                (row) => !row.id,
+              ).length,
+
+            updatedRecordCount:
+              preparedRows.filter(
+                (row) => row.id,
+              ).length,
+
+            deletedRecordCount:
+              normalizedDeletedIds.length,
+
+            warningCount,
+          };
+        },
+      );
+    } finally {
+      await session.endSession();
+    }
+
+    if (!updateResult) {
+      throw createMasterServiceError(
+        "MASTER_EDITOR_UPDATE_NOT_COMPLETED",
+        "No fue posible guardar los cambios.",
+        500,
+      );
+    }
+
+    return updateResult;
+  };
+
+/**
  * Construye la descarga del archivo madre.
  */
 const downloadMasterFile = async ({
@@ -939,6 +1652,7 @@ module.exports = {
   normalizeMasterSites,
   listMasterFiles,
   getMasterFileEditorData,
+  updateMasterFileFromEditor,
   downloadMasterFile,
   copyMasterFile,
   deleteMasterFile,

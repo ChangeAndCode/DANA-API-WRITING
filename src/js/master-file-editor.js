@@ -34,6 +34,8 @@ const masterEditorExitConfirmButton = document.getElementById("masterEditorExitC
 
 let currentEditorUser = null;
 let editorHasChanges = false;
+let currentMasterRevision = 0;
+let editorIsSaving = false;
 let orderedMasterHeaders = [];
 const deletedMasterRecordIds =
   new Set();
@@ -197,6 +199,7 @@ const setEditorDirty = (hasChanges) => {
   editorHasChanges = hasChanges;
 
   masterEditorSaveButton.disabled =
+    editorIsSaving ||
     !canEditMasterContent() ||
     !editorHasChanges;
 };
@@ -261,37 +264,42 @@ const configureEditorPermissions = () => {
   const isAdmin =
     currentEditorUser?.role === "admin";
 
-  /*
-   * El tipo de archivo nunca se modifica porque
-   * determina cómo se interpreta cada registro.
-   */
+  const contentDisabled =
+    editorIsSaving ||
+    !canEditMasterContent();
+
   masterEditorType.disabled = true;
 
-  /*
-   * Solamente el administrador puede modificar
-   * el nombre y las sedes.
-   */
-  masterEditorName.disabled = !isAdmin;
+  masterEditorName.disabled =
+    editorIsSaving || !isAdmin;
 
   masterEditorSiteCheckboxes.forEach(
     (checkbox) => {
-      checkbox.disabled = !isAdmin;
+      checkbox.disabled =
+        editorIsSaving || !isAdmin;
     },
   );
 
-  /*
-   * Administradores y usuarios pueden modificar
-   * el contenido de las filas.
-   */
   masterEditorTableBody
     .querySelectorAll(
       "input.master-editor-cell",
     )
     .forEach((input) => {
       input.disabled =
-        !canEditMasterContent();
+        contentDisabled;
     });
-  masterEditorAddRowButton.disabled = !canEditMasterContent();
+
+  masterEditorTableBody
+    .querySelectorAll(
+      "button.master-editor-row-delete",
+    )
+    .forEach((button) => {
+      button.disabled =
+        contentDisabled;
+    });
+
+  masterEditorAddRowButton.disabled =
+    contentDisabled;
 };
 
 
@@ -2001,6 +2009,344 @@ const handleMasterTablePaste = (
   }
 };
 
+const getSelectedMasterSites = () => {
+  return Array.from(
+    masterEditorSiteCheckboxes,
+  )
+    .filter(
+      (checkbox) =>
+        checkbox.checked,
+    )
+    .map(
+      (checkbox) =>
+        checkbox.value,
+    );
+};
+
+const collectMasterEditorRows = () => {
+  return Array.from(
+    masterEditorTableBody.querySelectorAll(
+      "tr",
+    ),
+  ).map((row) => {
+    const cells = Array.from(
+      row.querySelectorAll(
+        "input.master-editor-cell",
+      ),
+    ).map((input) => ({
+      columnIndex:
+        Number(
+          input.dataset.columnIndex,
+        ),
+
+      value:
+        input.value,
+    }));
+
+    return {
+      id:
+        row.dataset.recordId || "",
+
+      cells,
+    };
+  });
+};
+
+const validateMasterEditorBeforeSave = (
+  rows,
+) => {
+  if (rows.length === 0) {
+    showEditorMessage(
+      "El archivo madre debe conservar al menos una fila.",
+      "error",
+    );
+
+    return false;
+  }
+
+  const isAdmin =
+    currentEditorUser?.role === "admin";
+
+  if (
+    isAdmin &&
+    !masterEditorName.value.trim()
+  ) {
+    showEditorMessage(
+      "El nombre para administración es obligatorio.",
+      "error",
+    );
+
+    masterEditorName.focus();
+    return false;
+  }
+
+  if (
+    isAdmin &&
+    getSelectedMasterSites().length === 0
+  ) {
+    showEditorMessage(
+      "Debes seleccionar al menos una sede.",
+      "error",
+    );
+
+    return false;
+  }
+
+  const tableRows = Array.from(
+    masterEditorTableBody.querySelectorAll(
+      "tr",
+    ),
+  );
+
+  let firstInvalidInput = null;
+  let invalidRowNumber = 0;
+
+  tableRows.forEach(
+    (row, rowIndex) => {
+      const inputs = Array.from(
+        row.querySelectorAll(
+          "input.master-editor-cell",
+        ),
+      );
+
+      inputs.forEach((input) => {
+        const mappedField =
+          input.dataset.mappedField || "";
+
+        const isRequired = [
+          "partNumber",
+          "description",
+        ].includes(mappedField);
+
+        if (isRequired) {
+          input.setCustomValidity(
+            input.value.trim()
+              ? ""
+              : "Este campo es obligatorio.",
+          );
+        }
+
+        if (input.dataset.catalogKey) {
+          validateMasterCatalogInput(
+            input,
+          );
+        }
+
+        if (
+          !firstInvalidInput &&
+          !input.checkValidity()
+        ) {
+          firstInvalidInput =
+            input;
+
+          invalidRowNumber =
+            rowIndex + 1;
+        }
+      });
+    },
+  );
+
+  if (firstInvalidInput) {
+    showEditorMessage(
+      `Corrige los campos inválidos de la fila ${invalidRowNumber}.`,
+      "error",
+    );
+
+    firstInvalidInput.focus();
+    firstInvalidInput.reportValidity();
+
+    return false;
+  }
+
+  return true;
+};
+
+const saveMasterEditorChanges =
+  async () => {
+    if (
+      editorIsSaving ||
+      !editorHasChanges
+    ) {
+      return;
+    }
+
+    const masterFileId =
+      getMasterFileId();
+
+    let rows =
+      collectMasterEditorRows();
+
+    if (
+      !validateMasterEditorBeforeSave(
+        rows,
+      )
+    ) {
+      return;
+    }
+
+    /*
+    * La validación puede normalizar valores,
+    * por ejemplo México a MX. Volvemos a leer
+    * la tabla para enviar los valores corregidos.
+    */
+    rows =
+      collectMasterEditorRows();
+
+    const payload = {
+      revision:
+        currentMasterRevision,
+
+      name:
+        masterEditorName.value.trim(),
+
+      sites:
+        getSelectedMasterSites(),
+
+      rows,
+
+      deletedRecordIds:
+        Array.from(
+          deletedMasterRecordIds,
+        ),
+    };
+
+    editorIsSaving = true;
+
+    configureEditorPermissions();
+    setEditorDirty(true);
+
+    showEditorMessage(
+      "Guardando cambios...",
+      "warning",
+    );
+
+    let changesWereSaved = false;
+
+    try {
+      const response = await fetch(
+        `/api/master-files/${encodeURIComponent(
+          masterFileId,
+        )}/editor`,
+        {
+          method: "PUT",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify(payload),
+        },
+      );
+
+      const data = await response
+        .json()
+        .catch(() => ({}));
+
+      if (!response.ok) {
+        const requestError =
+          new Error(
+            data.message ||
+              "No fue posible guardar los cambios.",
+          );
+
+        requestError.code =
+          data.code || "";
+
+        requestError.status =
+          response.status;
+
+        throw requestError;
+      }
+
+      changesWereSaved = true;
+
+      currentMasterRevision =
+        Number(
+          data.masterFile?.revision,
+        ) || currentMasterRevision;
+
+      deletedMasterRecordIds.clear();
+      setEditorDirty(false);
+
+      /*
+       * Volvemos a consultar el archivo para que
+       * las filas nuevas reciban el ID generado
+       * por MongoDB.
+       */
+      const refreshedData =
+        await loadMasterEditorData(
+          masterFileId,
+        );
+
+      currentMasterRevision =
+        Number(
+          refreshedData
+            .masterFile
+            .revision,
+        );
+
+      renderMasterMetadata(
+        refreshedData.masterFile,
+      );
+
+      renderMasterTable(
+        refreshedData
+          .masterFile
+          .headers,
+
+        refreshedData.records,
+      );
+
+      showEditorMessage(
+        `${data.message} Nuevas: ${
+          data.insertedRecordCount || 0
+        }. Actualizadas: ${
+          data.updatedRecordCount || 0
+        }. Eliminadas: ${
+          data.deletedRecordCount || 0
+        }.`,
+        "success",
+      );
+    } catch (error) {
+      console.error(
+        "Error al guardar archivo madre:",
+        error,
+      );
+
+      if (changesWereSaved) {
+        showEditorMessage(
+          "Los cambios se guardaron, pero no fue posible recargar la tabla. La página se actualizará automáticamente.",
+          "warning",
+        );
+
+        window.setTimeout(
+          () => {
+            window.location.reload();
+          },
+          1500,
+        );
+      } else {
+        setEditorDirty(true);
+
+        showEditorMessage(
+          error.message ||
+            "No fue posible guardar los cambios.",
+          "error",
+        );
+      }
+    } finally {
+      editorIsSaving = false;
+
+      configureEditorPermissions();
+
+      setEditorDirty(
+        editorHasChanges,
+      );
+    }
+  };
+
 const initializeMasterEditor = async () => {
   const masterFileId =
     getMasterFileId();
@@ -2046,7 +2392,26 @@ const initializeMasterEditor = async () => {
       await loadMasterEditorData(
         masterFileId,
       );
-    
+
+    const loadedRevision =
+      Number(
+        editorData.masterFile.revision,
+      );
+
+    if (
+      !Number.isInteger(
+        loadedRevision,
+      ) ||
+      loadedRevision < 1
+    ) {
+      throw new Error(
+        "El archivo madre no tiene una revisión válida.",
+      );
+    }
+
+    currentMasterRevision =
+      loadedRevision;
+
     await loadMasterCatalogOptions();
 
     renderMasterMetadata(
@@ -2123,16 +2488,7 @@ document.addEventListener("DOMContentLoaded",() => {
 
     masterEditorSaveButton.addEventListener(
       "click",
-      () => {
-        if (!editorHasChanges) {
-          return;
-        }
-
-        showEditorMessage(
-          "Los cambios están preparados. En el siguiente paso conectaremos el guardado con MongoDB.",
-          "warning",
-        );
-      },
+      saveMasterEditorChanges,
     );
 
     masterEditorExitCancelButton.addEventListener(

@@ -43,6 +43,30 @@ const insertMasterRecords = async (
 };
 
 /**
+ * Ejecuta inserciones, actualizaciones y
+ * eliminaciones lógicas en una sola operación.
+ */
+const bulkWriteMasterRecords = async (
+  operations,
+  session = null,
+) => {
+  if (
+    !Array.isArray(operations) ||
+    operations.length === 0
+  ) {
+    return null;
+  }
+
+  return MasterRecord.bulkWrite(
+    operations,
+    {
+      ordered: true,
+      ...getSessionOptions(session),
+    },
+  );
+};
+
+/**
  * Actualiza información del archivo madre.
  */
 const updateMasterFileById = async (
@@ -62,6 +86,40 @@ const updateMasterFileById = async (
     },
   );
 };
+
+/**
+ * Actualiza el archivo solamente si conserva
+ * la revisión que recibió originalmente el editor.
+ */
+const updateMasterFileByIdAndRevision =
+  async (
+    masterFileId,
+    expectedRevision,
+    updateFields,
+    session = null,
+  ) => {
+    return MasterFile.findOneAndUpdate(
+      {
+        _id: masterFileId,
+        revision:
+          expectedRevision,
+      },
+      {
+        $set:
+          updateFields,
+        $inc: {
+          revision: 1,
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+        ...getSessionOptions(
+          session,
+        ),
+      },
+    );
+  };
 
 /**
  * Busca un archivo madre por ID.
@@ -175,6 +233,66 @@ const findActiveMasterRecordsForEditor = async (masterFileId) => {
 };
 
 /**
+ * Recupera los identificadores y posiciones
+ * de los registros que pueden modificarse.
+ */
+const findActiveMasterRecordsForUpdate =
+  async (
+    masterFileId,
+    session = null,
+  ) => {
+    const query =
+      MasterRecord.find({
+        masterFileId,
+        isDeleted: false,
+      })
+        .sort({
+          sourceRow: 1,
+        })
+        .select([
+          "_id",
+          "sourceRow",
+          "partNumber",
+          "partNumberNormalized",
+        ].join(" "))
+        .lean();
+
+    if (session) {
+      query.session(session);
+    }
+
+    return query;
+  };
+
+/**
+ * Obtiene la posición más alta utilizada,
+ * incluyendo registros eliminados lógicamente.
+ */
+const findHighestMasterRecordSourceRow =
+  async (
+    masterFileId,
+    session = null,
+  ) => {
+    const query =
+      MasterRecord.findOne({
+        masterFileId,
+      })
+        .sort({
+          sourceRow: -1,
+        })
+        .select(
+          "sourceRow",
+        )
+        .lean();
+
+    if (session) {
+      query.session(session);
+    }
+
+    return query;
+  };
+
+/**
  * Recupera toda la información necesaria para copiar
  * los registros activos de un archivo madre.
  */
@@ -225,13 +343,16 @@ const deleteMasterFileById = async (
 module.exports = {
   createMasterFile,
   insertMasterRecords,
+  bulkWriteMasterRecords,
   updateMasterFileById,
+  updateMasterFileByIdAndRevision,
   findMasterFileById,
   findMasterFiles,
   findActiveMasterRecordsByMasterFileId,
   findActiveMasterRecordsForEditor,
+  findActiveMasterRecordsForUpdate,
+  findHighestMasterRecordSourceRow,
   findActiveMasterRecordsForCopy,
   deleteMasterRecordsByMasterFileId,
   deleteMasterFileById,
-
 };

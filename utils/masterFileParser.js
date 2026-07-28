@@ -391,6 +391,311 @@ const findPartNumberHeader = (
 };
 
 /**
+   * Construye un registro normalizado utilizando
+   * las celdas recibidas desde el editor.
+ */
+const buildMasterRecordFromEditorRow = ({
+  masterType,
+  headers = [],
+  cells = [],
+  sourceRow,
+}) => {
+  const config =
+    getMasterFileConfig(masterType);
+
+  const parsedSourceRow =
+    Number.parseInt(sourceRow, 10);
+
+  if (
+    !Number.isInteger(parsedSourceRow) ||
+    parsedSourceRow < 1
+  ) {
+    throw createParserError(
+      "MASTER_EDITOR_SOURCE_ROW_INVALID",
+      "La fila del editor no tiene una posición válida.",
+    );
+  }
+
+  if (!Array.isArray(headers)) {
+    throw createParserError(
+      "MASTER_EDITOR_HEADERS_INVALID",
+      "Los encabezados del archivo madre no son válidos.",
+    );
+  }
+
+  if (!Array.isArray(cells)) {
+    throw createParserError(
+      "MASTER_EDITOR_CELLS_INVALID",
+      "Las celdas de la fila no son válidas.",
+    );
+  }
+
+  /*
+  * Los encabezados provienen del MasterFile
+  * almacenado, no de la petición del navegador.
+  */
+  const preparedHeaders = headers
+    .filter((header) => {
+      const columnIndex =
+        Number(header.columnIndex);
+
+      return (
+        Number.isInteger(columnIndex) &&
+        columnIndex > 0
+      );
+    })
+    .map((header) => {
+      const originalName =
+        toCleanText(
+          header.originalName,
+        );
+
+      const normalizedName =
+        header.normalizedName ||
+        normalizeMasterHeader(
+          originalName,
+        );
+
+      const columnLetter =
+        toCleanText(
+          header.columnLetter,
+        ).toUpperCase();
+
+      const ignored =
+        header.ignored === true;
+
+      const rule = ignored
+        ? null
+        : resolveHeaderRule(
+            config,
+            columnLetter,
+            normalizedName,
+          );
+
+      return {
+        originalName,
+        normalizedName,
+        columnIndex:
+          Number(header.columnIndex),
+        columnLetter,
+        mappedField:
+          rule?.target || "",
+        ignored,
+        rule,
+      };
+    });
+
+  const partNumberHeader =
+    findPartNumberHeader(
+      preparedHeaders,
+      config,
+    );
+
+  if (!partNumberHeader) {
+    throw createParserError(
+      "MASTER_PART_NUMBER_HEADER_MISSING",
+      "No se encontró la columna Part Number.",
+    );
+  }
+
+  const valuesByColumn =
+    new Map();
+
+  cells.forEach((cell) => {
+    const columnIndex =
+      Number(cell?.columnIndex);
+
+    if (
+      Number.isInteger(columnIndex) &&
+      columnIndex > 0
+    ) {
+      valuesByColumn.set(
+        columnIndex,
+        cell.value,
+      );
+    }
+  });
+
+  const partNumberValue =
+    valuesByColumn.get(
+      partNumberHeader.columnIndex,
+    );
+
+  const partNumber =
+    normalizePartNumber(
+      partNumberValue,
+    );
+
+  if (!partNumber) {
+    throw createParserError(
+      "MASTER_EDITOR_PART_NUMBER_REQUIRED",
+      `La fila ${parsedSourceRow} requiere Part Number.`,
+    );
+  }
+
+  if (
+    isTemplatePartNumber(
+      partNumber,
+    )
+  ) {
+    throw createParserError(
+      "MASTER_EDITOR_TEMPLATE_ROW_INVALID",
+      `La fila ${parsedSourceRow} contiene un Part Number de plantilla.`,
+    );
+  }
+
+  const rawCells = [];
+  const normalizedValues = {};
+  const validationWarnings = [];
+  const fdaAffirmations =
+    new Map();
+
+  preparedHeaders.forEach(
+    (header) => {
+      if (header.ignored) {
+        return;
+      }
+
+      const rawValue =
+        valuesByColumn.get(
+          header.columnIndex,
+        );
+
+      if (isBlank(rawValue)) {
+        return;
+      }
+
+      rawCells.push({
+        header:
+          header.originalName,
+        columnIndex:
+          header.columnIndex,
+        columnLetter:
+          header.columnLetter,
+        value:
+          rawValue,
+      });
+
+      if (
+        !header.rule ||
+        header.rule.target ===
+          "partNumber"
+      ) {
+        return;
+      }
+
+      const transformedValue =
+        transformValue(
+          rawValue,
+          header.rule,
+          validationWarnings,
+          header.originalName,
+        );
+
+      if (
+        header.rule.transform ===
+        "fdaAffirmation"
+      ) {
+        const sequence =
+          header.rule.sequence;
+
+        const component =
+          header.rule.component;
+
+        if (
+          !fdaAffirmations.has(
+            sequence,
+          )
+        ) {
+          fdaAffirmations.set(
+            sequence,
+            {
+              sequence,
+              code: "",
+              qualifier: "",
+            },
+          );
+        }
+
+        const affirmation =
+          fdaAffirmations.get(
+            sequence,
+          );
+
+        affirmation[component] =
+          transformedValue || "";
+
+        return;
+      }
+
+      setNormalizedValue(
+        normalizedValues,
+        header.rule.target,
+        transformedValue,
+        validationWarnings,
+        header.originalName,
+      );
+
+      if (
+        header.rule.sourceUnit &&
+        transformedValue !==
+          undefined
+      ) {
+        setNormalizedValue(
+          normalizedValues,
+          "unitNetWeightSourceUnit",
+          header.rule.sourceUnit,
+          validationWarnings,
+          header.originalName,
+        );
+      }
+    },
+  );
+
+  const completedAffirmations = [
+    ...fdaAffirmations.values(),
+  ].filter(
+    (affirmation) =>
+      affirmation.code ||
+      affirmation.qualifier,
+  );
+
+  if (
+    completedAffirmations.length > 0
+  ) {
+    normalizedValues
+      .fdaAffirmations =
+      completedAffirmations;
+  }
+
+  if (
+    isSuspiciousPartNumber(
+      partNumber,
+    )
+  ) {
+    addRecordWarning(
+      validationWarnings,
+      "SUSPICIOUS_PART_NUMBER",
+      `El valor "${partNumber}" parece un encabezado o separador.`,
+      "Part Number",
+      partNumberValue,
+    );
+  }
+
+  return {
+    masterType,
+    partNumber,
+    partNumberNormalized:
+      partNumber,
+    sourceRow:
+      parsedSourceRow,
+    rawCells,
+    normalizedValues,
+    validationWarnings,
+  };
+};
+
+/**
  * Agrega una advertencia a un registro.
  */
 const addRecordWarning = (
@@ -1068,6 +1373,7 @@ const parseMasterFileBuffer = async (
 
 module.exports = {
   parseMasterFileBuffer,
+  buildMasterRecordFromEditorRow,
   normalizePartNumber,
   isTemplatePartNumber,
 };
