@@ -16,7 +16,7 @@ module.exports = {
       // Solo fija lo imprescindible aquí; el resto vendrá de .env
       env: {
         NODE_ENV: "development",
-        PORT: 3000,
+        PORT: 3001,
       },
 
       // logs en ./logs
