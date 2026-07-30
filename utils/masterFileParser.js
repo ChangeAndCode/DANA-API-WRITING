@@ -153,6 +153,73 @@ const parseNumericValue = (value) => {
   };
 };
 
+const MASTER_CURRENCY_MAPPED_FIELDS =
+  new Set([
+    "materialCostUsd",
+    "dutiableValueUsd",
+    "unitCostUsd",
+    "unitValueUsd",
+    "addedValueUsd",
+    "totalUnitCostUsd",
+    "totalValueUsd",
+  ]);
+
+const MASTER_CURRENCY_HEADER_KEYS =
+  new Set([
+    "materialcostusd",
+    "dutiablevalueusd",
+    "unitcostusd",
+    "unitvalueusd",
+    "addedvalueusd",
+    "totalunitcost",
+    "totalunitcostusd",
+    "totalvalueusd",
+  ]);
+
+const isMasterCurrencyHeader = (
+  header,
+) => {
+  return (
+    MASTER_CURRENCY_MAPPED_FIELDS.has(
+      header?.rule?.target || "",
+    ) ||
+    MASTER_CURRENCY_HEADER_KEYS.has(
+      header?.normalizedName || "",
+    )
+  );
+};
+
+const normalizeMasterRawCellValue = (
+  value,
+  header,
+) => {
+  if (
+    !isMasterCurrencyHeader(
+      header,
+    )
+  ) {
+    return value;
+  }
+
+  const normalizedValue =
+    normalizeCurrencyValue(value);
+
+  if (
+    normalizedValue === ""
+  ) {
+    return "";
+  }
+
+  const numericValue =
+    Number(normalizedValue);
+
+  return Number.isFinite(
+    numericValue,
+  )
+    ? numericValue
+    : normalizedValue;
+};
+
 const parseDateValue = (value) => {
   if (isBlank(value)) {
     return {
@@ -670,7 +737,10 @@ const buildMasterRecordFromEditorRow = ({
         columnLetter:
           header.columnLetter,
         value:
-          rawValue,
+          normalizeMasterRawCellValue(
+            rawValue,
+            header,
+          ),
       });
 
       if (
@@ -1135,7 +1205,11 @@ const parseDataRow = (
       header: header.originalName,
       columnIndex: header.columnIndex,
       columnLetter: header.columnLetter,
-      value: rawValue,
+      value:
+        normalizeMasterRawCellValue(
+          rawValue,
+          header,
+        ),
     });
 
     if (!header.rule) {

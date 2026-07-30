@@ -31,6 +31,82 @@ const DOCUMENT_TYPE_LABELS = {
   splScrap: "Packing List (SPL/Scrap)",
 };
 
+const CURRENCY_COLUMN_KEYS =
+  new Set([
+    "dutiableValueUsd",
+    "unitCostUsd",
+    "unitValueUsd",
+    "addedValueUsd",
+    "totalValueUsd",
+  ]);
+
+const normalizeCurrencyInputValue = (
+  value,
+) => {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "";
+  }
+
+  const rawValue = String(value)
+    .replace(/\u00a0/g, " ")
+    .trim();
+
+  if (!rawValue) {
+    return "";
+  }
+
+  const isNegative =
+    /^\(.*\)$/.test(rawValue);
+
+  const normalizedValue = rawValue
+    .replace(/\p{Sc}/gu, "")
+    .replace(/,/g, "")
+    .replace(/\s+/g, "")
+    .replace(/^\((.*)\)$/, "$1");
+
+  if (
+    isNegative &&
+    normalizedValue &&
+    !normalizedValue.startsWith("-")
+  ) {
+    return `-${normalizedValue}`;
+  }
+
+  return normalizedValue;
+};
+
+const configureCurrencyInput = (
+  input,
+) => {
+  input.dataset.currency = "true";
+
+  input.value =
+    normalizeCurrencyInputValue(
+      input.value,
+    );
+
+  input.addEventListener(
+    "input",
+    () => {
+      const normalizedValue =
+        normalizeCurrencyInputValue(
+          input.value,
+        );
+
+      if (
+        input.value !==
+        normalizedValue
+      ) {
+        input.value =
+          normalizedValue;
+      }
+    },
+  );
+};
+
 const finishedProductColumns = [
   { key: "partNumber", label: "Part Number", maxLength: 30, required: true },
   { key: "description", label: "Description", maxLength: 60, required: true },
@@ -1953,6 +2029,15 @@ function addFinishedProductRow(values = {}) {
     if (displayVal !== null && displayVal !== undefined) {
       input.value = String(displayVal);
     }
+    if (
+      CURRENCY_COLUMN_KEYS.has(
+        col.key,
+      )
+    ) {
+      configureCurrencyInput(
+        input,
+      );
+    }
     if (col.maxLength) input.maxLength = col.maxLength;
     if (col.required) input.required = true;
     if (col.key === "partNumber") {
@@ -2170,6 +2255,15 @@ function addRawMaterialRow(values = {}) {
     }
     if (displayVal !== null && displayVal !== undefined) {
       input.value = String(displayVal);
+    }
+    if (
+      CURRENCY_COLUMN_KEYS.has(
+        col.key,
+      )
+    ) {
+      configureCurrencyInput(
+        input,
+      );
     }
     if (col.required) input.required = true;
     if (col.key === "partNumber") {
@@ -2874,6 +2968,16 @@ function addSplScrapRow(values = {}) {
           : "";
     if (initialValue !== undefined && initialValue !== null) {
       input.value = String(initialValue);
+    }
+    if (
+      input.tagName === "INPUT" &&
+      CURRENCY_COLUMN_KEYS.has(
+        col.key,
+      )
+    ) {
+      configureCurrencyInput(
+        input,
+      );
     }
     if (col.key === "partNumber") {
       input.addEventListener("input", () => {

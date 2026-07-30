@@ -98,6 +98,109 @@ const isMasterDateHeader = (
   );
 };
 
+const MASTER_CURRENCY_MAPPED_FIELDS =
+  new Set([
+    "materialCostUsd",
+    "dutiableValueUsd",
+    "unitCostUsd",
+    "unitValueUsd",
+    "addedValueUsd",
+    "totalUnitCostUsd",
+    "totalValueUsd",
+  ]);
+
+const MASTER_CURRENCY_HEADER_KEYS =
+  new Set([
+    "materialcostusd",
+    "dutiablevalueusd",
+    "unitcostusd",
+    "unitvalueusd",
+    "addedvalueusd",
+    "totalunitcost",
+    "totalunitcostusd",
+    "totalvalueusd",
+  ]);
+
+const isMasterCurrencyHeader = (
+  header,
+) => {
+  return (
+    MASTER_CURRENCY_MAPPED_FIELDS.has(
+      header?.mappedField || "",
+    ) ||
+    MASTER_CURRENCY_HEADER_KEYS.has(
+      header?.normalizedName || "",
+    )
+  );
+};
+
+const normalizeMasterCurrencyValue = (
+  value,
+) => {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "";
+  }
+
+  const rawValue = String(value)
+    .replace(/\u00a0/g, " ")
+    .trim();
+
+  if (!rawValue) {
+    return "";
+  }
+
+  const isNegative =
+    /^\(.*\)$/.test(rawValue);
+
+  const normalizedValue = rawValue
+    .replace(/\p{Sc}/gu, "")
+    .replace(/,/g, "")
+    .replace(/\s+/g, "")
+    .replace(/^\((.*)\)$/, "$1");
+
+  if (
+    isNegative &&
+    normalizedValue &&
+    !normalizedValue.startsWith("-")
+  ) {
+    return `-${normalizedValue}`;
+  }
+
+  return normalizedValue;
+};
+
+const configureMasterCurrencyInput = (
+  input,
+) => {
+  input.dataset.currency = "true";
+
+  input.value =
+    normalizeMasterCurrencyValue(
+      input.value,
+    );
+
+  input.addEventListener(
+    "input",
+    () => {
+      const normalizedValue =
+        normalizeMasterCurrencyValue(
+          input.value,
+        );
+
+      if (
+        input.value !==
+        normalizedValue
+      ) {
+        input.value =
+          normalizedValue;
+      }
+    },
+  );
+};
+
 const normalizeMasterCatalogValue = (
   value,
 ) => {
@@ -1409,9 +1512,25 @@ const createRecordRow = (
     const isDateField =
       isMasterDateHeader(header);
 
-    input.value = isDateField
-      ? formatMasterYmd(rawCellValue)
-      : formatCellValue(rawCellValue);
+    const isCurrencyField =
+      isMasterCurrencyHeader(header);
+
+    if (isDateField) {
+      input.value =
+        formatMasterYmd(
+          rawCellValue,
+        );
+    } else if (isCurrencyField) {
+      input.value =
+        normalizeMasterCurrencyValue(
+          rawCellValue,
+        );
+    } else {
+      input.value =
+        formatCellValue(
+          rawCellValue,
+        );
+    }
 
     input.disabled =
       !canEditMasterContent();
@@ -1430,6 +1549,11 @@ const createRecordRow = (
 
     if (isDateField) {
       configureMasterYmdInput(input);
+    }
+    if (isCurrencyField) {
+      configureMasterCurrencyInput(
+        input,
+      );
     }
 
     input.addEventListener(
@@ -2269,66 +2393,66 @@ const validateMasterEditorBeforeSave = (
   let firstInvalidInput = null;
   let invalidRowNumber = 0;
 
-      for (
-        let rowIndex = 0;
-        rowIndex < tableRows.length;
-        rowIndex += 1
-      ) {
-        const row = tableRows[rowIndex];
+  for (
+    let rowIndex = 0;
+    rowIndex < tableRows.length;
+    rowIndex += 1
+  ) {
+    const row = tableRows[rowIndex];
 
-        const inputs = Array.from(
-          row.querySelectorAll(
-            "input.master-editor-cell",
-          ),
+    const inputs = Array.from(
+      row.querySelectorAll(
+        "input.master-editor-cell",
+      ),
+    );
+
+    for (const input of inputs) {
+      const mappedField =
+        input.dataset.mappedField || "";
+
+      const isRequired = [
+        "partNumber",
+        "description",
+      ].includes(mappedField);
+
+      if (isRequired) {
+        input.setCustomValidity(
+          input.value.trim()
+            ? ""
+            : "Este campo es obligatorio.",
         );
-
-        for (const input of inputs) {
-          const mappedField =
-            input.dataset.mappedField || "";
-
-          const isRequired = [
-            "partNumber",
-            "description",
-          ].includes(mappedField);
-
-          if (isRequired) {
-            input.setCustomValidity(
-              input.value.trim()
-                ? ""
-                : "Este campo es obligatorio.",
-            );
-          }
-
-          if (
-            input.dataset.dateFormat ===
-            "ymd"
-          ) {
-            validateMasterYmdInput(input);
-          }
-
-          if (input.dataset.catalogKey) {
-            validateMasterCatalogInput(
-              input,
-            );
-          }
-
-          if (!input.checkValidity()) {
-            firstInvalidInput = input;
-            invalidRowNumber =
-              rowIndex + 1;
-
-            break;
-          }
-        }
-
-        /*
-        * No recorremos miles de filas después
-        * de encontrar el primer error.
-        */
-        if (firstInvalidInput) {
-          break;
-        }
       }
+
+      if (
+        input.dataset.dateFormat ===
+        "ymd"
+      ) {
+        validateMasterYmdInput(input);
+      }
+
+      if (input.dataset.catalogKey) {
+        validateMasterCatalogInput(
+          input,
+        );
+      }
+
+      if (!input.checkValidity()) {
+        firstInvalidInput = input;
+        invalidRowNumber =
+          rowIndex + 1;
+
+        break;
+      }
+    }
+
+    /*
+    * No recorremos miles de filas después
+    * de encontrar el primer error.
+    */
+    if (firstInvalidInput) {
+      break;
+    }
+  }
 
   if (firstInvalidInput) {
     showEditorMessage(
