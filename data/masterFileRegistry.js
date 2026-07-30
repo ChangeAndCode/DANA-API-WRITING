@@ -22,6 +22,146 @@ const normalizeMasterHeader = (value) => {
     .replace(/[^a-z0-9]+/g, "");
 };
 
+const createMasterHeaderAliasRules = ({
+  dataElement,
+  aliases = [],
+  target,
+  transform,
+  ...options
+}) => {
+  const rule = Object.freeze({
+    target,
+    transform,
+    ...options,
+  });
+
+  const acceptedHeaders = [
+    dataElement,
+    ...aliases,
+  ];
+
+  return Object.freeze(
+    Object.fromEntries(
+      acceptedHeaders.map((header) => [
+        normalizeMasterHeader(header),
+        rule,
+      ]),
+    ),
+  );
+};
+
+const EXPORTATION_HTS_HEADER_RULES =
+  createMasterHeaderAliasRules({
+    dataElement:
+      "Exportation HTS Code",
+    aliases: [
+      "US Exportation HTS Code",
+      "USA Exportation HTS Code",
+      "Export HTS Code",
+      "US Export HTS Code",
+      "USA Export HTS Code",
+      "Exportation Code",
+      "US Exportation Code",
+      "USA Exportation Code",
+    ],
+    target:
+      "exportationHtsCode",
+    transform:
+      "hts",
+  });
+
+const RAW_MATERIAL_DESCRIPTION_HEADER_RULES =
+  createMasterHeaderAliasRules({
+    dataElement:
+      "Customer Description",
+
+    aliases: [
+      "Customer Description / DESCRIPTION",
+      "Description",
+    ],
+
+    target:
+      "description",
+
+    transform:
+      "text",
+  });
+
+const LICENSE_NUMBER_HEADER_RULES =
+  createMasterHeaderAliasRules({
+    dataElement:
+      "License Number (LCN)",
+
+    aliases: [
+      "License No.",
+      "License No",
+      "License Number",
+      "License #",
+      "LCN",
+    ],
+
+    target:
+      "licenseNumber",
+
+    transform:
+      "text",
+  });
+
+const LICENSE_EXCEPTION_HEADER_RULES =
+  createMasterHeaderAliasRules({
+    dataElement:
+      "License Exception",
+
+    aliases: [
+      "Lic Exception",
+      "Exception",
+    ],
+
+    target:
+      "licenseException",
+
+    transform:
+      "text",
+  });
+
+const LICENSE_EXPIRATION_DATE_HEADER_RULES =
+  createMasterHeaderAliasRules({
+    dataElement:
+      "License Expiration date",
+
+    aliases: [
+      "License Exception Date",
+      "Lic Exp Date",
+      "Expiration Date",
+      "Expires On",
+    ],
+
+    target:
+      "licenseExpirationDate",
+
+    transform:
+      "date",
+  });
+
+const USML_ITAR_HEADER_RULES =
+  createMasterHeaderAliasRules({
+    dataElement:
+      "USML (ITAR)",
+
+    aliases: [
+      "USML",
+      "ITAR",
+      "USMIL No.",
+      "USMIL No",
+    ],
+
+    target:
+      "usmlItar",
+
+    transform:
+      "text",
+  });
+
 /**
  * Reglas de encabezados para Finished Goods.
  *
@@ -86,11 +226,6 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
   usimportationhtscode: {
     target: "importationHtsCode",
     transform: "hts",
-  },
-
-  usmilno: {
-    target: "usmlItar",
-    transform: "text",
   },
 
   fdaproductcode: {
@@ -247,10 +382,15 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
     transform: "text",
   },
 
-  unnamedcolumnak: {
+  frontrear: {
     target: "frontRear",
     transform: "uppercaseText",
   },
+  ...EXPORTATION_HTS_HEADER_RULES,
+  ...LICENSE_NUMBER_HEADER_RULES,
+  ...LICENSE_EXCEPTION_HEADER_RULES,
+  ...LICENSE_EXPIRATION_DATE_HEADER_RULES,
+  ...USML_ITAR_HEADER_RULES,
 });
 
 /**
@@ -262,18 +402,10 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
     transform: "partNumber",
   },
 
+  ...RAW_MATERIAL_DESCRIPTION_HEADER_RULES,
+
   itemtypebygroupproductfamily: {
     target: "productFamily",
-    transform: "text",
-  },
-
-  customerdescription: {
-    target: "description",
-    transform: "text",
-  },
-
-  description: {
-    target: "description",
     transform: "text",
   },
 
@@ -400,7 +532,10 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
     target: "clientComments",
     transform: "text",
   },
-
+  ...EXPORTATION_HTS_HEADER_RULES,
+  ...LICENSE_NUMBER_HEADER_RULES,
+  ...LICENSE_EXCEPTION_HEADER_RULES,
+  ...USML_ITAR_HEADER_RULES,
 });
 
 /**
@@ -435,8 +570,8 @@ const MASTER_FILE_REGISTRY = Object.freeze({
       "image",
     ],
 
-    requiredHeaderKeys: [
-      "partnumber",
+    requiredMappedFields: [
+      "partNumber",
       "description",
     ],
 
@@ -468,18 +603,10 @@ const MASTER_FILE_REGISTRY = Object.freeze({
       "image",
     ],
 
-    requiredHeaderKeys: [
-      "partnumber",
-      "customerdescription",
+    requiredMappedFields: [
+      "partNumber",
+      "description",
     ],
-
-    columnRules: {
-      I: {
-        target: "scheduleBCode",
-        transform: "hts",
-      },
-    },
-
     headerRules: RAW_MATERIAL_HEADER_RULES,
   }),
 });

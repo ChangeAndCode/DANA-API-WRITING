@@ -153,6 +153,87 @@ const parseNumericValue = (value) => {
   };
 };
 
+const parseDateValue = (value) => {
+  if (isBlank(value)) {
+    return {
+      isValid: true,
+      value: undefined,
+    };
+  }
+
+  if (value instanceof Date) {
+    if (
+      Number.isNaN(
+        value.getTime(),
+      )
+    ) {
+      return {
+        isValid: false,
+        value: undefined,
+      };
+    }
+
+    return {
+      isValid: true,
+      value: new Date(
+        Date.UTC(
+          value.getUTCFullYear(),
+          value.getUTCMonth(),
+          value.getUTCDate(),
+        ),
+      ),
+    };
+  }
+
+  const text =
+    toCleanText(value);
+
+  const match = text.match(
+    /^(\d{4})[-/.]?(\d{2})[-/.]?(\d{2})(?:T.*)?$/,
+  );
+
+  if (!match) {
+    return {
+      isValid: false,
+      value: undefined,
+    };
+  }
+
+  const year =
+    Number(match[1]);
+
+  const month =
+    Number(match[2]);
+
+  const day =
+    Number(match[3]);
+
+  const parsedDate =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day,
+      ),
+    );
+
+  const isValid =
+    parsedDate.getUTCFullYear() ===
+      year &&
+    parsedDate.getUTCMonth() ===
+      month - 1 &&
+    parsedDate.getUTCDate() ===
+      day;
+
+  return {
+    isValid,
+    value:
+      isValid
+        ? parsedDate
+        : undefined,
+  };
+};
+
 /**
  * Reduce el número de decimales producidos por conversiones.
  */
@@ -250,10 +331,11 @@ const columnHasData = (
 };
 
 /**
- * Obtiene primero una regla por columna y después por encabezado.
+ * Obtiene primero una regla específica por columna
+ * y después intenta resolverla por su encabezado.
  *
- * Esto es importante para Raw Material:
- * columna I -> scheduleBCode.
+ * Las reglas por columna sólo deben utilizarse cuando
+ * la posición tenga un significado fijo confirmado.
  */
 const resolveHeaderRule = (
   config,
@@ -352,22 +434,37 @@ const validateRequiredHeaders = (
   headers,
   config,
 ) => {
-  const availableHeaders = new Set(
-    headers.map((header) =>
-      header.normalizedName,
-    ),
-  );
-
-  const missingHeaders =
-    config.requiredHeaderKeys.filter(
-      (requiredHeader) =>
-        !availableHeaders.has(requiredHeader),
+  const availableMappedFields =
+    new Set(headers.filter((header) =>
+        header.ignored !== true,
+      )
+      .map((header) =>
+        header.mappedField,
+      )
+      .filter(Boolean),
     );
 
-  if (missingHeaders.length > 0) {
+  const requiredMappedFields =
+    Array.isArray(
+      config.requiredMappedFields,
+    )
+      ? config.requiredMappedFields
+      : [];
+
+  const missingMappedFields =
+    requiredMappedFields.filter(
+      (requiredField) =>
+        !availableMappedFields.has(
+          requiredField,
+        ),
+    );
+
+  if (
+    missingMappedFields.length > 0
+  ) {
     throw createParserError(
-      "MASTER_REQUIRED_HEADERS_MISSING",
-      `Faltan encabezados obligatorios: ${missingHeaders.join(
+      "MASTER_REQUIRED_FIELDS_MISSING",
+      `Faltan campos obligatorios: ${missingMappedFields.join(
         ", ",
       )}.`,
     );
@@ -755,6 +852,24 @@ const transformValue = (
       }
 
       return numericResult.value;
+    }
+    case "date": {
+      const dateResult =
+        parseDateValue(value);
+
+      if (!dateResult.isValid) {
+        addRecordWarning(
+          warnings,
+          "INVALID_DATE",
+          `El valor de "${fieldName}" no tiene una fecha válida.`,
+          fieldName,
+          value,
+        );
+
+        return undefined;
+      }
+
+      return dateResult.value;
     }
 
     case "gramsToPounds": {

@@ -57,6 +57,11 @@ let activeMasterCatalogInput = null;
 
 const MASTER_CATALOG_MAX_OPTIONS = 10;
 
+const MASTER_COUNTRY_CODE_ALIASES =
+  new Map([
+    ["USA", "US"],
+  ]);
+
 const MASTER_TYPE_LABELS = {
   finishedProduct: "Finished Goods",
   rawMaterial: "Raw Material",
@@ -883,6 +888,11 @@ const validateMasterCatalogInput = (
         trimmedValue,
       );
 
+    const aliasCode =
+      MASTER_COUNTRY_CODE_ALIASES.get(
+        possibleCode,
+    );
+
     const codeByName =
       catalog.nameToCode.get(
         normalizeMasterCountryName(
@@ -895,7 +905,12 @@ const validateMasterCatalogInput = (
         possibleCode,
       )
         ? possibleCode
-        : codeByName;
+        : aliasCode &&
+            catalog.optionsSet.has(
+              aliasCode,
+            )
+          ? aliasCode
+          : codeByName;
 
     if (resolvedCode) {
       input.value =
