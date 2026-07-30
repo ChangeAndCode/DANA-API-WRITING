@@ -133,9 +133,22 @@ const finishedProductColumns = [
   { key: "Preference Criterion", label: "Preference Criterion" },
   { key: "Producer", label: "Producer" },
   { key: "Net Cost", label: "Net Cost" },
-  { key: "Period (From)", label: "Period (From)" },
-  { key: "Period (To)", label: "Period (To)" },
-  { key: "USML (ITAR)", label: "USML (ITAR)" },
+  {
+    key: "Period (From)",
+    label: "Period (From)",
+    dateFormat: "ymd",
+    maxLength: 10,
+  },
+  {
+    key: "Period (To)",
+    label: "Period (To)",
+    dateFormat: "ymd",
+    maxLength: 10,
+  },
+  {
+    key: "USML (ITAR)",
+    label: "USML (ITAR)",
+  },
 ];
 
 const rawMaterialColumns = [
@@ -181,7 +194,12 @@ const rawMaterialColumns = [
   { key: "filler", label: "Filler" },
   { key: "licenseNumber", label: "License Number (LCN)" },
   { key: "licenseException", label: "License Exception" },
-  { key: "licenseExpiration", label: "License Expiration date" },
+  {
+    key: "licenseExpiration",
+    label: "License Expiration date",
+    dateFormat: "ymd",
+    maxLength: 10,
+  },
   { key: "usml", label: "USML (ITAR)" },
 ];
 
@@ -1337,9 +1355,14 @@ function buildMasterAutofillValues(
       eccn: normalizedValues.eccn,
       licenseNumber: normalizedValues.licenseNumber,
       licenseException: normalizedValues.licenseException,
-      licenseExpiration: normalizedValues.licenseExpirationDate
-        ? formatYmdCompact(normalizedValues.licenseExpirationDate)
-        : "",
+      licenseExpiration:
+        normalizedValues
+          .licenseExpirationDate
+          ? formatYmd(
+              normalizedValues
+                .licenseExpirationDate,
+            )
+          : "",
       usml: normalizedValues.usmlItar,
     };
   }
@@ -1852,8 +1875,8 @@ function addFinishedProductRow(values = {}) {
         ? values[col.label]
         : "";
     let displayVal = rawVal;
-    if (col.label === "Period (From)" || col.label === "Period (To)") {
-      displayVal = formatYmdCompact(rawVal);
+    if (col.dateFormat === "ymd") {
+      displayVal = formatYmd(rawVal);
     }
     if (displayVal !== null && displayVal !== undefined) {
       input.value = String(displayVal);
@@ -1861,9 +1884,17 @@ function addFinishedProductRow(values = {}) {
     if (col.maxLength) input.maxLength = col.maxLength;
     if (col.required) input.required = true;
     if (col.key === "partNumber") {
-      input.addEventListener("input", () => {
-        input.value = input.value.toUpperCase();
-      });
+      input.addEventListener(
+        "input",
+        () => {
+          input.value =
+            input.value.toUpperCase();
+        },
+      );
+    }
+
+    if (col.dateFormat === "ymd") {
+      configureYmdInput(input);
     }
     if (col.derived) {
       input.readOnly = true;
@@ -2062,17 +2093,25 @@ function addRawMaterialRow(values = {}) {
         ? values[col.label]
         : "";
     let displayVal = rawVal;
-    if (col.label === "License Expiration date") {
-      displayVal = formatYmdCompact(rawVal);
+    if (col.dateFormat === "ymd") {
+      displayVal = formatYmd(rawVal);
     }
     if (displayVal !== null && displayVal !== undefined) {
       input.value = String(displayVal);
     }
     if (col.required) input.required = true;
     if (col.key === "partNumber") {
-      input.addEventListener("input", () => {
-        input.value = input.value.toUpperCase();
-      });
+      input.addEventListener(
+        "input",
+        () => {
+          input.value =
+            input.value.toUpperCase();
+        },
+      );
+    }
+
+    if (col.dateFormat === "ymd") {
+      configureYmdInput(input);
     }
     // Autoformato y límite estricto para HTS Code (rawMaterial)
     if (col.key === "importHts" || col.key === "exportHts") {
@@ -2318,6 +2357,80 @@ function formatYmd(value) {
   if (m) out += `-${m}`;
   if (d) out += `-${d}`;
   return out;
+}
+
+function isValidYmd(value) {
+  const match = String(value || "")
+    .trim()
+    .match(
+      /^(\d{4})-(\d{2})-(\d{2})$/,
+    );
+
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  const date = new Date(
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+    ),
+  );
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function validateYmdInput(input) {
+  const value = String(
+    input.value || "",
+  ).trim();
+
+  const isValid =
+    !value || isValidYmd(value);
+
+  input.setCustomValidity(
+    isValid
+      ? ""
+      : "Ingresa una fecha válida en formato YYYY-MM-DD.",
+  );
+
+  return isValid;
+}
+
+function configureYmdInput(input) {
+  input.maxLength = 10;
+  input.inputMode = "numeric";
+  input.placeholder = "YYYY-MM-DD";
+  input.dataset.dateFormat = "ymd";
+
+  input.addEventListener(
+    "input",
+    () => {
+      input.value = formatYmd(
+        input.value,
+      );
+
+      validateYmdInput(input);
+    },
+  );
+
+  input.addEventListener(
+    "blur",
+    () => {
+      if (!validateYmdInput(input)) {
+        input.reportValidity();
+      }
+    },
+  );
 }
 
 function formatYmdDigits(value) {
