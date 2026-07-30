@@ -230,7 +230,12 @@ const rawMaterialSchemaSpec = [
   {
     item: 13,
     dataElement: "License Expiration date",
-    aliases: ["Lic Exp Date", "Expiration Date", "Expires On"],
+    aliases: [
+      "License Exception Date",
+      "Lic Exp Date",
+      "Expiration Date",
+      "Expires On",
+    ],
     type: "D",
     length: 8,
     position: "224-231",
