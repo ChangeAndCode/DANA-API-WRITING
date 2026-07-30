@@ -1,6 +1,70 @@
 const path = require("path");
 const ExcelJS = require("exceljs");
 
+const {
+  normalizeCurrencyValue,
+} = require(
+  "./transformationUtils",
+);
+
+const MASTER_CURRENCY_MAPPED_FIELDS =
+  new Set([
+    "materialCostUsd",
+    "dutiableValueUsd",
+    "unitCostUsd",
+    "unitValueUsd",
+    "addedValueUsd",
+    "totalUnitCostUsd",
+    "totalValueUsd",
+  ]);
+
+const MASTER_CURRENCY_HEADER_KEYS =
+  new Set([
+    "materialcostusd",
+    "dutiablevalueusd",
+    "unitcostusd",
+    "unitvalueusd",
+    "addedvalueusd",
+    "totalunitcost",
+    "totalunitcostusd",
+    "totalvalueusd",
+  ]);
+
+const isCurrencyHeader = (
+  header,
+) => {
+  return (
+    MASTER_CURRENCY_MAPPED_FIELDS.has(
+      header?.mappedField || "",
+    ) ||
+    MASTER_CURRENCY_HEADER_KEYS.has(
+      header?.normalizedName || "",
+    )
+  );
+};
+
+const normalizeExportCurrencyValue = (
+  value,
+) => {
+  const normalizedValue =
+    normalizeCurrencyValue(value);
+
+  if (
+    normalizedValue === ""
+  ) {
+    return "";
+  }
+
+  const numericValue =
+    Number(normalizedValue);
+
+  return Number.isFinite(
+    numericValue,
+  )
+    ? numericValue
+    : normalizedValue;
+};
+
 /**
  * Convierte el nombre de la hoja en un nombre válido
  * para Excel.
@@ -116,6 +180,20 @@ const createMasterFileWorkbook = async ({
       secondHeader.columnIndex,
   );
 
+  const currencyColumnIndexes =
+    new Set(
+      headers
+        .filter(
+          isCurrencyHeader,
+        )
+        .map(
+          (header) =>
+            Number(
+              header.columnIndex,
+            ),
+        ),
+    );
+
   const headerRow =
     worksheet.getRow(
       headerRowNumber,
@@ -212,11 +290,22 @@ const createMasterFileWorkbook = async ({
         return;
       }
 
+      const exportValue =
+        currencyColumnIndexes.has(
+          Number(
+            rawCell.columnIndex,
+          ),
+        )
+          ? normalizeExportCurrencyValue(
+              rawCell.value,
+            )
+          : rawCell.value;
+
       row.getCell(
         rawCell.columnIndex,
       ).value =
         normalizeExportCellValue(
-          rawCell.value,
+          exportValue,
         );
     });
   });

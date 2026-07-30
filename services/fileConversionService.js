@@ -1,19 +1,34 @@
 // services/fileConversionService.js
 const path = require("path");
 const fs = require("fs/promises");
-const { getRegistryEntry } = require("../data/documentTypeRegistry");
+const { getRegistryEntry } = require(
+  "../data/documentTypeRegistry"
+);
 const {
   parseXLSX,
   parseCSV,
   parseTXT,
   generateFilename,
-} = require("../utils/fileParsers");
+} = require(
+  "../utils/fileParsers"
+);
 const {
   validateDataIntegrity,
   applyBusinessValidations,
-} = require("../utils/validationUtils");
-const { applyTransformations } = require("../utils/transformationUtils");
-const { getDefaultFormat } = require("../utils/documentFormatRules");
+} = require(
+  "../utils/validationUtils"
+);
+const {
+  applyTransformations,
+  normalizeCurrencyValue,
+} = require(
+  "../utils/transformationUtils",
+);
+const { 
+  getDefaultFormat 
+} = require(
+  "../utils/documentFormatRules"
+);
 
 const WRITE_TXT_ON_VALIDATION_ERROR =
   (process.env.WRITE_TXT_ON_VALIDATION_ERROR || "false").toLowerCase() ===
@@ -22,7 +37,10 @@ const SPLSCRAP_TOTAL_VALUE_FIELD = "Total Value (USD)";
 
 const parseManualNumericValue = (value) => {
   if (value === null || value === undefined) return null;
-  const normalized = String(value).trim().replace(/,/g, "");
+  const normalized =
+    normalizeCurrencyValue(
+      value,
+    );
   if (normalized === "") return null;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
