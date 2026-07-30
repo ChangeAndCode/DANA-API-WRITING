@@ -5,6 +5,7 @@ const VALID_MASTER_SITES = ["gaiim", "p1a"];
 const VALID_MASTER_TYPES = [
   "finishedProduct",
   "rawMaterial",
+  "billOfMaterials",
 ];
 
 const rawCellSchema = new mongoose.Schema(
@@ -92,209 +93,249 @@ const fdaAffirmationSchema = new mongoose.Schema(
   },
 );
 
+const customizerSchemaFields =
+  Object.fromEntries(
+    Array.from(
+      { length: 10 },
+      (_, index) => [
+        `customizer${index + 1}`,
+        {
+          type: String,
+          trim: true,
+          default: "",
+        },
+      ],
+    ),
+  );
+
 const normalizedValuesSchema = new mongoose.Schema(
   {
+    componentPartNumber: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    bomType: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    quantity: {
+      type: Number,
+    },
+    componentClassification: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     productFamily: {
       type: String,
       trim: true,
       default: "",
     },
-
     description: {
       type: String,
       trim: true,
       default: "",
     },
-
     unitNetWeight: {
       type: Number,
     },
-
     unitNetWeightSourceUnit: {
       type: String,
       trim: true,
       lowercase: true,
       enum: ["g", "kg", "lb"],
     },
-
     materialCostUsd: {
       type: Number,
     },
-
     dutiableValueUsd: {
       type: Number,
     },
-
     unitCostUsd: {
       type: Number,
     },
-
     addedValueUsd: {
       type: Number,
     },
-
     totalUnitCostUsd: {
       type: Number,
     },
-
+    totalValueUsd: {
+      type: Number,
+    },
     unitOfMeasure: {
       type: String,
       trim: true,
       uppercase: true,
       default: "",
     },
-    
     uom: {
       type: String,
       trim: true,
       default: "",
     },
-
     countryOfOrigin: {
       type: String,
       trim: true,
       uppercase: true,
       default: "",
     },
-
     importationHtsCode: {
       type: String,
       trim: true,
       default: "",
     },
-
     exportationHtsCode: {
       type: String,
       trim: true,
       default: "",
     },
-
     scheduleBCode: {
       type: String,
       trim: true,
       default: "",
     },
-
     eccn: {
       type: String,
       trim: true,
       uppercase: true,
       default: "",
     },
-
     usmlItar: {
       type: String,
       trim: true,
       default: "",
     },
-
     licenseNumber: {
       type: String,
       trim: true,
       default: "",
     },
-
     licenseException: {
       type: String,
       trim: true,
       default: "",
     },
-
     licenseExpirationDate: {
       type: Date,
     },
-
     fdaProductCode: {
       type: String,
       trim: true,
       default: "",
     },
-
     fdaStorage: {
       type: String,
       trim: true,
       default: "",
     },
-
     fdaCountryOfOrigin: {
       type: String,
       trim: true,
       uppercase: true,
       default: "",
     },
-
     fdaMarker: {
       type: String,
       trim: true,
       uppercase: true,
       default: "",
     },
-
     fdaAffirmations: {
       type: [fdaAffirmationSchema],
       default: [],
     },
-
     descriptionForCustoms: {
       type: String,
       trim: true,
       default: "",
     },
-
     compositionMaterial: {
       type: String,
       trim: true,
       default: "",
     },
-
     mainFunction: {
       type: String,
       trim: true,
       default: "",
     },
-
     technicalInformation: {
       type: String,
       trim: true,
       default: "",
     },
-
     spanishDescription: {
       type: String,
       trim: true,
       default: "",
     },
-
     mxTariffCode: {
       type: String,
       trim: true,
       default: "",
     },
-
     regulations: {
       type: String,
       trim: true,
       default: "",
     },
-
     comments: {
       type: String,
       trim: true,
       default: "",
     },
-
     clientComments: {
       type: String,
       trim: true,
       default: "",
     },
-
     frontRear: {
       type: String,
       trim: true,
       uppercase: true,
       default: "",
     },
+    regime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    brand: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    model: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    serial: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    powerSourceType: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    capacity: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    poNumber: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    ...customizerSchemaFields,
   },
   {
     _id: false,
@@ -442,6 +483,13 @@ masterRecordSchema.index(
     unique: true,
   },
 );
+
+masterRecordSchema.index({
+  sites: 1,
+  masterType: 1,
+  "normalizedValues.componentPartNumber": 1,
+  isDeleted: 1,
+});
 
 module.exports = mongoose.model(
   "MasterRecord",

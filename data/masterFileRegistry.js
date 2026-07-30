@@ -3,6 +3,7 @@
 const MASTER_TYPES = Object.freeze({
   FINISHED_PRODUCT: "finishedProduct",
   RAW_MATERIAL: "rawMaterial",
+  BILL_OF_MATERIALS: "billOfMaterials",
 });
 
 /**
@@ -538,6 +539,150 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
   ...USML_ITAR_HEADER_RULES,
 });
 
+const BOM_CUSTOMIZER_HEADER_RULES =
+  Object.freeze(
+    Object.fromEntries(
+      Array.from(
+        { length: 10 },
+        (_, index) => {
+          const number = index + 1;
+
+          return [
+            `customizer${number}`,
+            Object.freeze({
+              target: `customizer${number}`,
+              transform: "text",
+            }),
+          ];
+        },
+      ),
+    ),
+  );
+
+const BILL_OF_MATERIALS_HEADER_RULES =
+  Object.freeze({
+    finishedgoodpartnumber: {
+      target: "partNumber",
+      transform: "partNumber",
+    },
+
+    componentpartnumber: {
+      target: "componentPartNumber",
+      transform: "partNumber",
+    },
+
+    type: {
+      target: "bomType",
+      transform: "uppercaseText",
+    },
+
+    quantity: {
+      target: "quantity",
+      transform: "number",
+    },
+
+    unitofmeasure: {
+      target: "unitOfMeasure",
+      transform: "uom",
+    },
+
+    componentclassification: {
+      target: "componentClassification",
+      transform: "text",
+    },
+
+    description: {
+      target: "description",
+      transform: "text",
+    },
+
+    unitvalueusd: {
+      target: "unitCostUsd",
+      transform: "number",
+    },
+
+    addedvalueusd: {
+      target: "addedValueUsd",
+      transform: "number",
+    },
+
+    totalvalueusd: {
+      target: "totalValueUsd",
+      transform: "number",
+    },
+
+    unitnetweight: {
+      target: "unitNetWeight",
+      transform: "number",
+    },
+
+    countryoforigin: {
+      target: "countryOfOrigin",
+      transform: "country",
+    },
+
+    eccn: {
+      target: "eccn",
+      transform: "uppercaseText",
+    },
+
+    usimphtscode: {
+      target: "importationHtsCode",
+      transform: "hts",
+    },
+
+    usexphtscode: {
+      target: "exportationHtsCode",
+      transform: "hts",
+    },
+
+    regime: {
+      target: "regime",
+      transform: "text",
+    },
+
+    brand: {
+      target: "brand",
+      transform: "text",
+    },
+
+    model: {
+      target: "model",
+      transform: "text",
+    },
+
+    serial: {
+      target: "serial",
+      transform: "text",
+    },
+
+    powersourcetype: {
+      target: "powerSourceType",
+      transform: "text",
+    },
+
+    capacity: {
+      target: "capacity",
+      transform: "text",
+    },
+
+    mainfunction: {
+      target: "mainFunction",
+      transform: "text",
+    },
+
+    ponumber: {
+      target: "poNumber",
+      transform: "text",
+    },
+
+    ...LICENSE_NUMBER_HEADER_RULES,
+    ...LICENSE_EXCEPTION_HEADER_RULES,
+    ...BOM_CUSTOMIZER_HEADER_RULES,
+  });
+
+
+
 /**
  * Configuración de los dos tipos de archivos madre.
  *
@@ -609,7 +754,50 @@ const MASTER_FILE_REGISTRY = Object.freeze({
     ],
     headerRules: RAW_MATERIAL_HEADER_RULES,
   }),
+
+  [MASTER_TYPES.BILL_OF_MATERIALS]:
+  Object.freeze({
+    masterType:
+      MASTER_TYPES.BILL_OF_MATERIALS,
+
+    displayName: "Bill of Materials",
+
+    sheetNames: [
+      "BOMs",
+    ],
+
+    ignoredSheetNames: [
+      "Catalogs",
+      "keys",
+    ],
+
+    headerRow: 1,
+
+    partNumberHeaderKeys: [
+      "finishedgoodpartnumber",
+    ],
+
+    ignoredHeaderKeys: [
+      "image",
+    ],
+
+    requiredMappedFields: [
+      "partNumber",
+      "componentPartNumber",
+      "bomType",
+      "quantity",
+      "unitOfMeasure",
+      "componentClassification",
+    ],
+
+    allowDuplicatePartNumbers: true,
+
+    headerRules:
+      BILL_OF_MATERIALS_HEADER_RULES,
+  }),
 });
+
+
 
 /**
  * Busca la configuración por tipo interno.
@@ -648,6 +836,8 @@ const detectMasterTypeBySheetNames = (sheetNames = []) => {
 
   return null;
 };
+
+
 
 /**
  * Obtiene la regla de mapeo de un encabezado.

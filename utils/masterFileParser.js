@@ -1505,10 +1505,14 @@ const parseMasterFileBuffer = async (
     );
   }
 
-  applyDuplicateWarnings(
-    records,
-    fileWarnings,
-  );
+  if (
+    config.allowDuplicatePartNumbers !== true
+  ) {
+    applyDuplicateWarnings(
+      records,
+      fileWarnings,
+    );
+  }
 
   const publicHeaders = headers.map(
     ({

@@ -24,10 +24,10 @@ const {
 } = require(
   "../utils/transformationUtils",
 );
-const { 
-  getDefaultFormat 
+const {
+  getDefaultFormat,
 } = require(
-  "../utils/documentFormatRules"
+  "../utils/documentFormatRules",
 );
 
 const WRITE_TXT_ON_VALIDATION_ERROR =

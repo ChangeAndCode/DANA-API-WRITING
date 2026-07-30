@@ -5,6 +5,7 @@ const VALID_MASTER_SITES = ["gaiim", "p1a"];
 const VALID_MASTER_TYPES = [
   "finishedProduct",
   "rawMaterial",
+  "billOfMaterials",
 ];
 
 const masterFileHeaderSchema = new mongoose.Schema(

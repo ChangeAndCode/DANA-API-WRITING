@@ -22,6 +22,7 @@ const VALID_MASTER_SITES = [
 const VALID_MASTER_TYPES = [
   "finishedProduct",
   "rawMaterial",
+  "billOfMaterials",
 ];
 
 /**

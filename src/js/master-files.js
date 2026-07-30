@@ -193,6 +193,7 @@ const formatMasterType = (masterType) => {
   const typeLabels = {
     finishedProduct: "Finished Goods",
     rawMaterial: "Raw Material",
+    billOfMaterials: "Bill of Materials",
   };
 
   return (

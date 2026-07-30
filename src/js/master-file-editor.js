@@ -65,6 +65,7 @@ const MASTER_COUNTRY_CODE_ALIASES =
 const MASTER_TYPE_LABELS = {
   finishedProduct: "Finished Goods",
   rawMaterial: "Raw Material",
+  billOfMaterials: "Bill of Materials",
 };
 
 const MASTER_DATE_HEADER_KEYS =
