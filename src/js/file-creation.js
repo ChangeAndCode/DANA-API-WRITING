@@ -748,7 +748,12 @@ function bindCatalogAutocompleteInput(input, catalogKey) {
         handleSplScrapUnitOfMeasureInput(input, true);
       }
       closeCatalogAutocompleteMenu(input);
-      validateCatalogCodeInput(input, { reportIfInvalid: true });
+      validateCatalogCodeInput(
+        input,
+        {
+          reportIfInvalid: false,
+        },
+      );
     }, 120);
   });
 
@@ -1106,6 +1111,73 @@ function validateCatalogInputsForDocumentType(documentType) {
   ]);
   firstInvalid.focus();
   firstInvalid.reportValidity();
+  return false;
+}
+
+function getDateInputsForDocumentType(
+  documentType,
+) {
+  const tableBody =
+    getTableBodyForDocumentType(
+      documentType,
+    );
+
+  if (!tableBody) {
+    return [];
+  }
+
+  return Array.from(
+    tableBody.querySelectorAll(
+      'input[data-date-format="ymd"]',
+    ),
+  );
+}
+
+function validateDateInputsForDocumentType(
+  documentType,
+) {
+  const dateInputs =
+    getDateInputsForDocumentType(
+      documentType,
+    );
+
+  const firstInvalidInput =
+    dateInputs.find(
+      (input) =>
+        !validateYmdInput(input),
+    );
+
+  if (!firstInvalidInput) {
+    return true;
+  }
+
+  const fieldLabel =
+    firstInvalidInput.placeholder ||
+    "Fecha";
+
+  renderErrorList([
+    {
+      message:
+        `${fieldLabel}: ingresa una fecha válida en formato YYYY-MM-DD.`,
+    },
+  ]);
+
+  firstInvalidInput.scrollIntoView({
+    behavior: "auto",
+    block: "center",
+    inline: "nearest",
+  });
+
+  firstInvalidInput.focus({
+    preventScroll: true,
+  });
+
+  /*
+   * Aquí sí mostramos el aviso porque el usuario
+   * intentó guardar.
+   */
+  firstInvalidInput.reportValidity();
+
   return false;
 }
 
@@ -2419,16 +2491,11 @@ function configureYmdInput(input) {
         input.value,
       );
 
-      validateYmdInput(input);
-    },
-  );
-
-  input.addEventListener(
-    "blur",
-    () => {
-      if (!validateYmdInput(input)) {
-        input.reportValidity();
-      }
+      /*
+       * Mientras el usuario escribe no mostramos
+       * errores ni bloqueamos la navegación.
+       */
+      input.setCustomValidity("");
     },
   );
 }
@@ -3545,9 +3612,21 @@ if (createFileButton) {
       return;
     }
     await loadManualCatalogOptions(true);
-    if (!validateCatalogInputsForDocumentType(fileType.value)) {
+    if (
+      !validateDateInputsForDocumentType(
+        fileType.value,
+      )
+    ) {
       return;
     }
+    if (
+      !validateCatalogInputsForDocumentType(
+        fileType.value
+      )
+    ) {
+      return;
+    }
+
     if (fileType.value === "finishedProduct") {
       const name =
         adminFileNameInput && adminFileNameInput.value
@@ -3633,6 +3712,13 @@ if (updateFileButton) {
         ]);
         return;
       }
+    if (
+      !validateDateInputsForDocumentType(
+        targetType,
+      )
+    ) {
+      return;
+    }
     if (!validateCatalogInputsForDocumentType(targetType)) {
       return;
     }
