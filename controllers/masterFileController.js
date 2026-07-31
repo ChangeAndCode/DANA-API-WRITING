@@ -307,6 +307,8 @@ const lookupMasterRecordByPartNumber =
               req.query.site,
             partNumber:
               req.query.partNumber,
+            componentPartNumber:
+              req.query.componentPartNumber,
             masterTypes:
               req.query.masterTypes,
           });

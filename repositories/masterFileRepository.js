@@ -240,18 +240,27 @@ const findActiveMasterRecordsForEditor = async (masterFileId) => {
 const findMasterRecordsByPartNumber =
   async ({
     partNumberNormalized,
+    componentPartNumberNormalized = "",
     site,
     masterTypes,
     limit = 50,
   }) => {
-    return MasterRecord.find({
+    const filters = {
       partNumberNormalized,
       sites: site,
       masterType: {
         $in: masterTypes,
       },
       isDeleted: false,
-    })
+    };
+
+    if (componentPartNumberNormalized) {
+      filters[
+        "normalizedValues.componentPartNumber"
+      ] = componentPartNumberNormalized;
+    }
+
+    return MasterRecord.find(filters)
       .sort({
         sourceRow: 1,
       })
@@ -272,6 +281,86 @@ const findMasterRecordsByPartNumber =
           status: "ready",
           sites: site,
         },
+        select: [
+          "name",
+          "masterType",
+          "sites",
+          "status",
+          "revision",
+          "updatedAt",
+          "lastImportedAt",
+        ].join(" "),
+      })
+      .lean();
+  };
+
+const findBomMasterRecordsForBatch =
+  async ({
+    finishedGoodPartNumbers,
+    componentPartNumbers,
+    site,
+  }) => {
+    const safeFinishedGoods =
+      Array.isArray(
+        finishedGoodPartNumbers,
+      )
+        ? finishedGoodPartNumbers
+        : [];
+
+    const safeComponents =
+      Array.isArray(
+        componentPartNumbers,
+      )
+        ? componentPartNumbers
+        : [];
+
+    if (
+      safeFinishedGoods.length === 0 ||
+      safeComponents.length === 0
+    ) {
+      return [];
+    }
+
+    return MasterRecord.find({
+      sites: site,
+
+      masterType:
+        "billOfMaterials",
+
+      partNumberNormalized: {
+        $in: safeFinishedGoods,
+      },
+
+      "normalizedValues.componentPartNumber":
+        {
+          $in: safeComponents,
+        },
+
+      isDeleted: false,
+    })
+      .sort({
+        sourceRow: 1,
+      })
+      .select([
+        "_id",
+        "masterFileId",
+        "masterType",
+        "partNumber",
+        "partNumberNormalized",
+        "sourceRow",
+        "normalizedValues",
+        "validationWarnings",
+      ].join(" "))
+      .populate({
+        path: "masterFileId",
+
+        match: {
+          status: "ready",
+          sites: site,
+          masterType:
+            "billOfMaterials",
+        },
+
         select: [
           "name",
           "masterType",
@@ -404,6 +493,7 @@ module.exports = {
   findActiveMasterRecordsByMasterFileId,
   findActiveMasterRecordsForEditor,
   findMasterRecordsByPartNumber,
+  findBomMasterRecordsForBatch,
   findActiveMasterRecordsForUpdate,
   findHighestMasterRecordSourceRow,
   findActiveMasterRecordsForCopy,

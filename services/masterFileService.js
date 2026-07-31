@@ -452,6 +452,7 @@ const lookupMasterRecordByPartNumber =
     user,
     requestedSite,
     partNumber,
+    componentPartNumber,
     masterTypes,
   }) => {
     const site =
@@ -462,6 +463,11 @@ const lookupMasterRecordByPartNumber =
 
     const normalizedPartNumber =
       String(partNumber || "")
+        .trim()
+        .toUpperCase();
+
+    const normalizedComponentPartNumber =
+      String(componentPartNumber || "")
         .trim()
         .toUpperCase();
 
@@ -519,12 +525,43 @@ const lookupMasterRecordByPartNumber =
       );
     }
 
+    const isBillOfMaterialsLookup =
+      lookupTypes.length === 1 &&
+      lookupTypes[0] === "billOfMaterials";
+
+    if (
+      isBillOfMaterialsLookup &&
+      !normalizedComponentPartNumber
+    ) {
+      throw createMasterServiceError(
+        "MASTER_LOOKUP_COMPONENT_REQUIRED",
+        "El Component Part Number es obligatorio para consultar el B.O.M.",
+      );
+    }
+
+    if (
+      normalizedComponentPartNumber.length >
+      100
+    ) {
+      throw createMasterServiceError(
+        "MASTER_LOOKUP_COMPONENT_TOO_LONG",
+        "El Component Part Number excede la longitud permitida.",
+      );
+    }
+
     const records =
       await masterFileRepository
         .findMasterRecordsByPartNumber({
           partNumberNormalized:
             normalizedPartNumber,
+
+          componentPartNumberNormalized:
+            isBillOfMaterialsLookup
+              ? normalizedComponentPartNumber
+              : "",
+
           site,
+
           masterTypes:
             lookupTypes,
         });
@@ -576,14 +613,93 @@ const lookupMasterRecordByPartNumber =
     if (!selectedRecord) {
       return {
         site,
+
         partNumber:
           normalizedPartNumber,
+
+        componentPartNumber:
+          normalizedComponentPartNumber,
+
         masterTypes:
           lookupTypes,
+
         matchCount: 0,
+
+        hasConflictingBomMatches:
+          false,
+
         match: null,
       };
     }
+
+    /*
+    * Si existen varios archivos B.O.M. para la
+    * sede, se utiliza el archivo más reciente.
+    * La comparación de duplicados se realiza
+    * solamente dentro de ese archivo.
+    */
+    const selectedMasterFileId =
+      String(
+        selectedRecord
+          .masterFileId?._id || "",
+      );
+
+    const relevantRecords =
+      isBillOfMaterialsLookup
+        ? availableRecords.filter(
+            (record) =>
+              String(
+                record.masterFileId?._id ||
+                  "",
+              ) === selectedMasterFileId,
+          )
+        : availableRecords;
+
+    /*
+    * Compara únicamente los campos que se
+    * utilizarán para autollenar el B.O.M.
+    */
+    const bomValueSignatures =
+      new Set(
+        relevantRecords.map(
+          (record) => {
+            const values =
+              record.normalizedValues ||
+              {};
+
+            return JSON.stringify([
+              String(
+                values.bomType ?? "",
+              )
+                .trim()
+                .toUpperCase(),
+
+              String(
+                values.quantity ?? "",
+              ).trim(),
+
+              String(
+                values.unitOfMeasure ??
+                  "",
+              )
+                .trim()
+                .toUpperCase(),
+
+              String(
+                values
+                  .componentClassification ??
+                  "",
+              )
+                .trim()
+                .toUpperCase(),
+            ]);
+          },
+        ),
+      );
+
+    const hasConflictingBomMatches =
+      isBillOfMaterialsLookup &&
+      bomValueSignatures.size > 1;
 
     const masterFile =
       selectedRecord.masterFileId;
@@ -594,8 +710,11 @@ const lookupMasterRecordByPartNumber =
         normalizedPartNumber,
       masterTypes:
         lookupTypes,
+      componentPartNumber:
+        normalizedComponentPartNumber,
       matchCount:
-        availableRecords.length,
+        relevantRecords.length,
+      hasConflictingBomMatches,
       match: {
         id:
           selectedRecord._id,
@@ -625,6 +744,381 @@ const lookupMasterRecordByPartNumber =
           updatedAt:
             masterFile.updatedAt,
         },
+      },
+    };
+  };
+
+const enrichBillOfMaterialsRows =
+  async ({
+    user,
+    requestedSite,
+    rows,
+  }) => {
+    const site =
+      resolveMasterLookupSite(
+        user,
+        requestedSite,
+      );
+
+    const safeRows =
+      Array.isArray(rows)
+        ? rows.map((row) => ({
+            ...(row || {}),
+          }))
+        : [];
+
+    const normalizeValue =
+      (value) =>
+        String(value ?? "")
+          .trim()
+          .toUpperCase();
+
+    const buildPairKey = (
+      finishedGood,
+      component,
+    ) =>
+      `${finishedGood}||${component}`;
+
+    const pairEntries = [];
+    const inputPairCounts =
+      new Map();
+
+    safeRows.forEach(
+      (row, rowIndex) => {
+        const finishedGood =
+          normalizeValue(
+            row[
+              "Finished Good Part Number"
+            ],
+          );
+
+        const component =
+          normalizeValue(
+            row[
+              "Component Part Number"
+            ],
+          );
+
+        if (
+          !finishedGood ||
+          !component
+        ) {
+          return;
+        }
+
+        const pairKey =
+          buildPairKey(
+            finishedGood,
+            component,
+          );
+
+        pairEntries.push({
+          row,
+          rowIndex,
+          finishedGood,
+          component,
+          pairKey,
+        });
+
+        inputPairCounts.set(
+          pairKey,
+          (
+            inputPairCounts.get(
+              pairKey,
+            ) || 0
+          ) + 1,
+        );
+      },
+    );
+
+    const finishedGoodPartNumbers =
+      [
+        ...new Set(
+          pairEntries.map(
+            (entry) =>
+              entry.finishedGood,
+          ),
+        ),
+      ];
+
+    const componentPartNumbers =
+      [
+        ...new Set(
+          pairEntries.map(
+            (entry) =>
+              entry.component,
+          ),
+        ),
+      ];
+
+    const records =
+      await masterFileRepository
+        .findBomMasterRecordsForBatch({
+          finishedGoodPartNumbers,
+          componentPartNumbers,
+          site,
+        });
+
+    const recordsByPair =
+      new Map();
+
+    records
+      .filter(
+        (record) =>
+          record.masterFileId,
+      )
+      .forEach((record) => {
+        const pairKey =
+          buildPairKey(
+            normalizeValue(
+              record
+                .partNumberNormalized,
+            ),
+
+            normalizeValue(
+              record
+                .normalizedValues
+                ?.componentPartNumber,
+            ),
+          );
+
+        if (
+          !recordsByPair.has(
+            pairKey,
+          )
+        ) {
+          recordsByPair.set(
+            pairKey,
+            [],
+          );
+        }
+
+        recordsByPair
+          .get(pairKey)
+          .push(record);
+      });
+
+    const usedOccurrences =
+      new Map();
+
+    let matchedRows = 0;
+    let missingRows = 0;
+    let ambiguousRows = 0;
+    let filledFieldCount = 0;
+
+    pairEntries.forEach(
+      (entry) => {
+        const pairRecords =
+          recordsByPair.get(
+            entry.pairKey,
+          ) || [];
+
+        if (
+          pairRecords.length === 0
+        ) {
+          missingRows += 1;
+          return;
+        }
+
+        pairRecords.sort(
+          (left, right) => {
+            const leftDate =
+              new Date(
+                left.masterFileId
+                  ?.updatedAt ||
+                left.masterFileId
+                  ?.lastImportedAt ||
+                0,
+              ).getTime();
+
+            const rightDate =
+              new Date(
+                right.masterFileId
+                  ?.updatedAt ||
+                right.masterFileId
+                  ?.lastImportedAt ||
+                0,
+              ).getTime();
+
+            if (
+              rightDate !== leftDate
+            ) {
+              return (
+                rightDate -
+                leftDate
+              );
+            }
+
+            return (
+              Number(
+                left.sourceRow,
+              ) -
+              Number(
+                right.sourceRow,
+              )
+            );
+          },
+        );
+
+        const selectedFileId =
+          String(
+            pairRecords[0]
+              .masterFileId?._id ||
+              "",
+          );
+
+        const relevantRecords =
+          pairRecords.filter(
+            (record) =>
+              String(
+                record
+                  .masterFileId?._id ||
+                  "",
+              ) ===
+              selectedFileId,
+          );
+
+        const signatures =
+          new Set(
+            relevantRecords.map(
+              (record) => {
+                const values =
+                  record
+                    .normalizedValues ||
+                  {};
+
+                return JSON.stringify([
+                  normalizeValue(
+                    values.bomType,
+                  ),
+
+                  String(
+                    values.quantity ??
+                      "",
+                  ).trim(),
+
+                  normalizeValue(
+                    values
+                      .unitOfMeasure,
+                  ),
+
+                  normalizeValue(
+                    values
+                      .componentClassification,
+                  ),
+                ]);
+              },
+            ),
+          );
+
+        let selectedRecord =
+          relevantRecords[0];
+
+        if (
+          signatures.size > 1
+        ) {
+          const importedCount =
+            inputPairCounts.get(
+              entry.pairKey,
+            ) || 0;
+
+          if (
+            importedCount !==
+            relevantRecords.length
+          ) {
+            ambiguousRows += 1;
+            return;
+          }
+
+          const occurrence =
+            usedOccurrences.get(
+              entry.pairKey,
+            ) || 0;
+
+          selectedRecord =
+            relevantRecords[
+              occurrence
+            ];
+
+          usedOccurrences.set(
+            entry.pairKey,
+            occurrence + 1,
+          );
+        }
+
+        if (!selectedRecord) {
+          ambiguousRows += 1;
+          return;
+        }
+
+        const normalizedValues =
+          selectedRecord
+            .normalizedValues || {};
+
+        const valuesToFill = [
+          [
+            "Type",
+            normalizedValues.bomType,
+          ],
+          [
+            "Quantity",
+            normalizedValues.quantity,
+          ],
+          [
+            "Unit of Measure",
+            normalizedValues
+              .unitOfMeasure,
+          ],
+          [
+            "Component classification",
+            normalizedValues
+              .componentClassification,
+          ],
+        ];
+
+        valuesToFill.forEach(
+          ([fieldName, value]) => {
+            if (
+              value === undefined ||
+              value === null ||
+              String(value).trim() === ""
+            ) {
+              return;
+            }
+
+            if (
+              String(
+                entry.row[
+                  fieldName
+                ] || "",
+              ).trim()
+            ) {
+              return;
+            }
+
+            entry.row[fieldName] =
+              value;
+
+            filledFieldCount += 1;
+          },
+        );
+
+        matchedRows += 1;
+      },
+    );
+
+    return {
+      site,
+      rows: safeRows,
+
+      summary: {
+        totalRows:
+          safeRows.length,
+
+        matchedRows,
+        missingRows,
+        ambiguousRows,
+        filledFieldCount,
       },
     };
   };
@@ -1924,10 +2418,10 @@ module.exports = {
   normalizeMasterSites,
   listMasterFiles,
   lookupMasterRecordByPartNumber,
+  enrichBillOfMaterialsRows,
   getMasterFileEditorData,
   updateMasterFileFromEditor,
   downloadMasterFile,
   copyMasterFile,
   deleteMasterFile,
-
 };

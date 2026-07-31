@@ -487,6 +487,7 @@ masterRecordSchema.index(
 masterRecordSchema.index({
   sites: 1,
   masterType: 1,
+  partNumberNormalized: 1,
   "normalizedValues.componentPartNumber": 1,
   isDeleted: 1,
 });

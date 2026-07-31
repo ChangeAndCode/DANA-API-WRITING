@@ -19,6 +19,9 @@ const {
   getCountryNameToCode,
 } = require("../data/countryCatalog");
 const { convertXlsToXlsx } = require("../utils/xlsConverter");
+const masterFileService = require(
+  "../services/masterFileService",
+);
 
 // Middleware de Multer (configúralo una vez)
 const multer = require("multer");
@@ -624,32 +627,124 @@ const importManualFile = async (req, res) => {
 
     const fileBuffer = await fs.readFile(readPath);
 
-    const importResult = await fileConversionService.prepareManualImportFromFile(
-      fileBuffer,
-      effectiveName,
-      documentType
-    );
+    const importResult =
+      await fileConversionService
+        .prepareManualImportFromFile(
+          fileBuffer,
+          effectiveName,
+          documentType,
+        );
 
-    const rows = Array.isArray(importResult.rows) ? importResult.rows : [];
+    let rows =
+      Array.isArray(importResult.rows)
+        ? importResult.rows
+        : [];
+
+    let errors =
+      Array.isArray(importResult.errors)
+        ? importResult.errors
+        : [];
+
+    let hasErrors =
+      Boolean(importResult.hasErrors);
+
+    let masterLookupSummary = null;
+
+    if (
+      documentType ===
+      "billOfMaterials"
+    ) {
+      const requestedSite =
+        resolveDocumentSiteForWrite(
+          req.user,
+          req.body.site,
+        );
+
+      if (!requestedSite) {
+        throw createHttpError(
+          400,
+          "Debes seleccionar una sede para consultar el archivo madre B.O.M.",
+          {
+            code:
+              "DOCUMENT_SITE_REQUIRED",
+          },
+        );
+      }
+
+      const enrichmentResult =
+        await masterFileService
+          .enrichBillOfMaterialsRows({
+            user: req.user,
+            requestedSite,
+            rows,
+          });
+
+      rows =
+        enrichmentResult.rows;
+
+      masterLookupSummary =
+        enrichmentResult.summary;
+
+      const validationResult =
+        await fileConversionService
+          .validateManualRowsForDocument(
+            rows,
+            documentType,
+            {
+              allowEmptyMandatoryFields:
+                false,
+            },
+          );
+
+      rows =
+        Array.isArray(
+          validationResult
+            .transformedData
+            ?.Sheet1,
+        )
+          ? validationResult
+              .transformedData
+              .Sheet1
+          : rows;
+
+      errors =
+        validationResult.errors || [];
+
+      hasErrors =
+        Boolean(
+          validationResult.hasErrors,
+        );
+    }
     const suggestedAdminFileName = path.parse(originalName).name;
 
     return res.status(200).json({
-      message: importResult.hasErrors
+      message: hasErrors
         ? "Archivo cargado con observaciones."
         : "Archivo cargado correctamente.",
       documentType,
       rows,
-      errors: importResult.errors || [],
-      hasErrors: !!importResult.hasErrors,
+      errors,
+      hasErrors,
+      masterLookupSummary,
       fileName: originalName,
       suggestedAdminFileName,
     });
   } catch (error) {
-    console.error("Error al importar archivo manual:", error);
-    return res.status(500).json({
-      message: "Error al importar el archivo.",
-      error: error.message,
-    });
+    console.error(
+      "Error al importar archivo manual:",
+      error,
+    );
+
+    return res
+      .status(error.statusCode || 500)
+      .json({
+        message:
+          error.statusCode
+            ? error.message
+            : "Error al importar el archivo.",
+        error: error.message,
+        code: error.code,
+      });
   } finally {
     await fs.unlink(tempFilePath).catch(() => {});
     if (convertedTempPath && convertedTempPath !== tempFilePath) {

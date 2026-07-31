@@ -1308,9 +1308,7 @@ function getMasterTypesForLookup(documentType, inputKey) {
   }
 
   if (documentType === "billOfMaterials") {
-    return inputKey === "finishedGoodPartNumber"
-      ? ["finishedProduct"]
-      : ["rawMaterial"];
+    return ["billOfMaterials"];
   }
 
   if (documentType === "splScrap") {
@@ -1516,12 +1514,21 @@ function buildMasterAutofillValues(
   }
 
   if (
-    documentType === "billOfMaterials" &&
-    inputKey === "componentPartNumber"
+    documentType === "billOfMaterials"
   ) {
     return {
+      type:
+        normalizedValues.bomType,
+
+      quantity:
+        normalizedValues.quantity,
+
+      unitOfMeasure:
+        normalizedValues.unitOfMeasure,
+
       componentClassification:
-        normalizedValues.productFamily,
+        normalizedValues
+          .componentClassification,
     };
   }
 
@@ -1579,7 +1586,21 @@ function applyMasterAutofill(
       columnKey,
     );
 
-    if (!input || input.readOnly || input.disabled) {
+    if (
+      !input ||
+      input.readOnly ||
+      input.disabled
+    ) {
+      return;
+    }
+
+    /*
+    * Conserva datos escritos o importados por
+    * el usuario. Solamente completa celdas vacías.
+    */
+    if (
+      String(input.value || "").trim()
+    ) {
       return;
     }
 
@@ -1606,14 +1627,77 @@ async function runMasterLookup(
   documentType,
   inputKey,
 ) {
-  const partNumber = String(input.value || "")
-    .trim()
-    .toUpperCase();
+  const isBillOfMaterials =
+    documentType === "billOfMaterials";
 
-  const site = getSelectedFileCreationSite();
+  let partNumber =
+    String(input.value || "")
+      .trim()
+      .toUpperCase();
+
+  let componentPartNumber = "";
+
+  const lookupRequestKey =
+    isBillOfMaterials
+      ? rowElement
+      : input;
+
+  const autofillSourceKey =
+    isBillOfMaterials
+      ? "billOfMaterialsPair"
+      : inputKey;
+
+  if (isBillOfMaterials) {
+    const finishedGoodInput =
+      getRowEditorByColumnKey(
+        rowElement,
+        documentType,
+        "finishedGoodPartNumber",
+      );
+
+    const componentInput =
+      getRowEditorByColumnKey(
+        rowElement,
+        documentType,
+        "componentPartNumber",
+      );
+
+    partNumber = String(
+      finishedGoodInput?.value || "",
+    )
+      .trim()
+      .toUpperCase();
+
+    componentPartNumber = String(
+      componentInput?.value || "",
+    )
+      .trim()
+      .toUpperCase();
+
+    if (
+      !partNumber ||
+      !componentPartNumber
+    ) {
+      setMasterLookupStatus(
+        rowElement,
+        "",
+        "Completa Finished Good y Component",
+      );
+
+      return;
+    }
+  }
+
+  const site =
+    getSelectedFileCreationSite();
 
   if (!partNumber) {
-    setMasterLookupStatus(rowElement, "", "");
+    setMasterLookupStatus(
+      rowElement,
+      "",
+      "",
+    );
+
     return;
   }
 
@@ -1623,18 +1707,26 @@ async function runMasterLookup(
       "warning",
       "Selecciona una sede",
     );
+
     return;
   }
 
   const previousController =
-    masterLookupControllers.get(input);
+    masterLookupControllers.get(
+      lookupRequestKey,
+    );
 
   if (previousController) {
     previousController.abort();
   }
 
-  const controller = new AbortController();
-  masterLookupControllers.set(input, controller);
+  const controller =
+    new AbortController();
+
+  masterLookupControllers.set(
+    lookupRequestKey,
+    controller,
+  );
 
   setMasterLookupStatus(
     rowElement,
@@ -1642,16 +1734,26 @@ async function runMasterLookup(
     "Buscando...",
   );
 
-  const masterTypes = getMasterTypesForLookup(
-    documentType,
-    inputKey,
-  );
+  const masterTypes =
+    getMasterTypesForLookup(
+      documentType,
+      inputKey,
+    );
 
-  const query = new URLSearchParams({
-    partNumber,
-    site,
-    masterTypes: masterTypes.join(","),
-  });
+  const query =
+    new URLSearchParams({
+      partNumber,
+      site,
+      masterTypes:
+        masterTypes.join(","),
+    });
+
+  if (isBillOfMaterials) {
+    query.set(
+      "componentPartNumber",
+      componentPartNumber,
+    );
+  }
 
   try {
     const response = await fetch(
@@ -1661,9 +1763,10 @@ async function runMasterLookup(
       },
     );
 
-    const data = await response
-      .json()
-      .catch(() => ({}));
+    const data =
+      await response
+        .json()
+        .catch(() => ({}));
 
     if (!response.ok) {
       throw new Error(
@@ -1672,10 +1775,42 @@ async function runMasterLookup(
       );
     }
 
-    if (
+    if (isBillOfMaterials) {
+      const currentFinishedGood =
+        String(
+          getRowEditorByColumnKey(
+            rowElement,
+            documentType,
+            "finishedGoodPartNumber",
+          )?.value || "",
+        )
+          .trim()
+          .toUpperCase();
+
+      const currentComponent =
+        String(
+          getRowEditorByColumnKey(
+            rowElement,
+            documentType,
+            "componentPartNumber",
+          )?.value || "",
+        )
+          .trim()
+          .toUpperCase();
+
+      if (
+        currentFinishedGood !==
+          partNumber ||
+        currentComponent !==
+          componentPartNumber
+      ) {
+        return;
+      }
+    } else if (
       String(input.value || "")
         .trim()
-        .toUpperCase() !== partNumber
+        .toUpperCase() !==
+      partNumber
     ) {
       return;
     }
@@ -1684,19 +1819,37 @@ async function runMasterLookup(
       setMasterLookupStatus(
         rowElement,
         "missing",
-        "No encontrado",
+        isBillOfMaterials
+          ? "No encontrado en B.O.M."
+          : "No encontrado",
       );
+
       return;
     }
 
-    const filledCount = applyMasterAutofill(
-      rowElement,
-      documentType,
-      inputKey,
-      data.match,
-    );
+    if (
+      data.hasConflictingBomMatches
+    ) {
+      setMasterLookupStatus(
+        rowElement,
+        "missing",
+        `${data.matchCount} coincidencias B.O.M. diferentes`,
+      );
 
-    const matchCount = Number(data.matchCount) || 1;
+      return;
+    }
+
+    const filledCount =
+      applyMasterAutofill(
+        rowElement,
+        documentType,
+        autofillSourceKey,
+        data.match,
+      );
+
+    const matchCount =
+      Number(data.matchCount) || 1;
+
     const sourceName =
       data.match.masterFile?.name ||
       "Archivo Madre";
@@ -1705,7 +1858,7 @@ async function runMasterLookup(
       setMasterLookupStatus(
         rowElement,
         "warning",
-        `${filledCount} campos · ${matchCount} coincidencias`,
+        `${filledCount} campos · ${matchCount} coincidencias · ${sourceName}`,
       );
     } else {
       setMasterLookupStatus(
@@ -1715,7 +1868,9 @@ async function runMasterLookup(
       );
     }
   } catch (error) {
-    if (error.name === "AbortError") {
+    if (
+      error.name === "AbortError"
+    ) {
       return;
     }
 
@@ -1731,10 +1886,13 @@ async function runMasterLookup(
     );
   } finally {
     if (
-      masterLookupControllers.get(input) ===
-      controller
+      masterLookupControllers.get(
+        lookupRequestKey,
+      ) === controller
     ) {
-      masterLookupControllers.delete(input);
+      masterLookupControllers.delete(
+        lookupRequestKey,
+      );
     }
   }
 }
@@ -1745,44 +1903,126 @@ function scheduleMasterLookup(
   documentType,
   inputKey,
 ) {
+  const isBillOfMaterials =
+    documentType === "billOfMaterials";
+
+  const lookupRequestKey =
+    isBillOfMaterials
+      ? rowElement
+      : input;
+
+  const autofillSourceKey =
+    isBillOfMaterials
+      ? "billOfMaterialsPair"
+      : inputKey;
+
   const currentTimer =
-    masterLookupTimers.get(input);
+    masterLookupTimers.get(
+      lookupRequestKey,
+    );
 
   if (currentTimer) {
-    window.clearTimeout(currentTimer);
+    window.clearTimeout(
+      currentTimer,
+    );
   }
 
   const currentController =
-    masterLookupControllers.get(input);
+    masterLookupControllers.get(
+      lookupRequestKey,
+    );
 
   if (currentController) {
     currentController.abort();
-    masterLookupControllers.delete(input);
+
+    masterLookupControllers.delete(
+      lookupRequestKey,
+    );
   }
 
   clearMasterAutofilledValues(
     rowElement,
-    inputKey,
+    autofillSourceKey,
   );
 
-  const partNumber = String(input.value || "").trim();
+  if (isBillOfMaterials) {
+    const finishedGoodPartNumber =
+      String(
+        getRowEditorByColumnKey(
+          rowElement,
+          documentType,
+          "finishedGoodPartNumber",
+        )?.value || "",
+      ).trim();
 
-  if (!partNumber) {
-    setMasterLookupStatus(rowElement, "", "");
-    return;
+    const componentPartNumber =
+      String(
+        getRowEditorByColumnKey(
+          rowElement,
+          documentType,
+          "componentPartNumber",
+        )?.value || "",
+      ).trim();
+
+    if (
+      !finishedGoodPartNumber &&
+      !componentPartNumber
+    ) {
+      setMasterLookupStatus(
+        rowElement,
+        "",
+        "",
+      );
+
+      return;
+    }
+
+    if (
+      !finishedGoodPartNumber ||
+      !componentPartNumber
+    ) {
+      setMasterLookupStatus(
+        rowElement,
+        "",
+        "Completa Finished Good y Component",
+      );
+
+      return;
+    }
+  } else {
+    const partNumber =
+      String(input.value || "")
+        .trim();
+
+    if (!partNumber) {
+      setMasterLookupStatus(
+        rowElement,
+        "",
+        "",
+      );
+
+      return;
+    }
   }
 
-  const timer = window.setTimeout(() => {
-    masterLookupTimers.delete(input);
-    runMasterLookup(
-      input,
-      rowElement,
-      documentType,
-      inputKey,
-    );
-  }, MASTER_LOOKUP_DELAY_MS);
+  const timer =
+    window.setTimeout(() => {
+      masterLookupTimers.delete(
+        lookupRequestKey,
+      );
 
-  masterLookupTimers.set(input, timer);
+      runMasterLookup(
+        input,
+        rowElement,
+        documentType,
+        inputKey,
+      );
+    }, MASTER_LOOKUP_DELAY_MS);
+
+  masterLookupTimers.set(
+    lookupRequestKey,
+    timer,
+  );
 }
 
 function bindMasterLookupForRow(rowElement, documentType) {
@@ -3256,6 +3496,19 @@ async function startManualImport() {
     ]);
     importFileInput.value = "";
     return;
+  }  
+  const selectedSite =
+    getSelectedFileCreationSite();
+  if (!selectedSite) {
+    renderErrorList([
+      {
+        message:
+          "Selecciona la sede que se utilizará para consultar los Archivos Madre.",
+      },
+    ]);
+    fileCreationSite?.focus();
+    importFileInput.value = "";
+    return;
   }
 
   const spinner = importFileButton
@@ -3276,6 +3529,10 @@ async function startManualImport() {
     const formData = new FormData();
     formData.append("file", selectedFile);
     formData.append("documentType", fileType.value);
+    formData.append(
+      "site",
+      selectedSite,
+    );
 
     const response = await fetch("/api/files/import-manual", {
       method: "POST",
