@@ -650,6 +650,21 @@ h2 {
   font-weight: 600;
 }
 
+/*
+ * Mantiene visibles los encabezados cuando
+ * el usuario realiza scroll vertical dentro
+ * de las tablas.
+ */
+.table-wrapper > .data-table
+  thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: #f5f8fb;
+  box-shadow:
+    0 1px 0 #d9dee5;
+}
+
 .data-table input[type='text'] {
   width: 100px;
   margin: 0;
