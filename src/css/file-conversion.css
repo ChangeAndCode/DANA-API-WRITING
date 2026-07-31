@@ -252,6 +252,63 @@ body {
   margin-bottom: 15px;
 }
 
+/*
+ * Mantiene el título del resultado visible
+ * y limita solamente la lista de mensajes.
+ *
+ * 240px muestra aproximadamente diez
+ * observaciones de una línea.
+ */
+.conversion-result.error ul,
+.conversion-result.warning ul {
+  max-height: 240px;
+  margin: 0;
+  padding-left: 28px;
+  padding-right: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/*
+ * Permite que los mensajes largos cambien
+ * de línea sin ampliar horizontalmente
+ * el panel de observaciones.
+ */
+.conversion-result.error li,
+.conversion-result.warning li {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* Apariencia del scroll en Chrome y Edge. */
+.conversion-result.error ul::-webkit-scrollbar,
+.conversion-result.warning ul::-webkit-scrollbar {
+  width: 8px;
+}
+
+.conversion-result.error ul::-webkit-scrollbar-track,
+.conversion-result.warning ul::-webkit-scrollbar-track {
+  background-color: rgba(
+    255,
+    255,
+    255,
+    0.35
+  );
+  border-radius: 4px;
+}
+
+.conversion-result.error ul::-webkit-scrollbar-thumb,
+.conversion-result.warning ul::-webkit-scrollbar-thumb {
+  background-color: #b57a80;
+  border-radius: 4px;
+}
+
+.conversion-result.error ul::-webkit-scrollbar-thumb:hover,
+.conversion-result.warning ul::-webkit-scrollbar-thumb:hover {
+  background-color: #955d64;
+}
+
 .conversion-result-details {
   margin-bottom: 15px;
 }
