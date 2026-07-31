@@ -143,6 +143,37 @@ body {
   text-align: center;
 }
 
+/*
+ * Fija la columna Acciones durante
+ * el desplazamiento horizontal.
+ */
+.master-editor-table
+  thead th.master-editor-actions-column,
+.master-editor-table
+  tbody td.master-editor-actions-cell {
+  position: sticky;
+  right: 0;
+  box-shadow:
+    -2px 0 4px rgba(
+      0,
+      0,
+      0,
+      0.08
+    );
+}
+
+.master-editor-table
+  thead th.master-editor-actions-column {
+  z-index: 20;
+  background-color: #f5f8fb;
+}
+
+.master-editor-table
+  tbody td.master-editor-actions-cell {
+  z-index: 10;
+  background-color: #ffffff;
+}
+
 .master-editor-table tbody td.master-editor-actions-cell {
   vertical-align: middle;
 }

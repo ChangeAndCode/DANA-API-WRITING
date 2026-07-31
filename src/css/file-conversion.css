@@ -928,3 +928,104 @@ h2 {
   border-color: #75c58a;
   background-color: #f4fff6;
 }
+
+/*
+ * Mantiene fija la última columna de las
+ * cuatro tablas durante el scroll horizontal.
+ */
+#fpTable th:last-child,
+#fpTable td:last-child,
+#rmTable th:last-child,
+#rmTable td:last-child,
+#bmTable th:last-child,
+#bmTable td:last-child,
+#splTable th:last-child,
+#splTable td:last-child {
+  position: sticky;
+  right: 0;
+  width: 130px;
+  min-width: 130px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+/*
+ * El encabezado Acciones debe permanecer
+ * encima de encabezados y celdas.
+ */
+#fpTable thead th:last-child,
+#rmTable thead th:last-child,
+#bmTable thead th:last-child,
+#splTable thead th:last-child {
+  z-index: 30;
+  background-color: #f5f8fb;
+  box-shadow:
+    -2px 0 4px rgba(
+      0,
+      0,
+      0,
+      0.08
+    );
+}
+
+/*
+ * Fondo opaco para impedir que las demás
+ * celdas sean visibles debajo de Acciones.
+ */
+#fpTable tbody td:last-child,
+#rmTable tbody td:last-child,
+#bmTable tbody td:last-child,
+#splTable tbody td:last-child {
+  z-index: 20;
+  background-color: #ffffff;
+  box-shadow:
+    -2px 0 4px rgba(
+      0,
+      0,
+      0,
+      0.08
+    );
+  vertical-align: middle;
+}
+
+/* Conserva el color de las consultas exitosas. */
+.table-wrapper
+  > .data-table
+  tr.master-lookup-found
+  td:last-child {
+  background-color: #f0fdf4;
+}
+
+/* Conserva el color de registros no encontrados. */
+.table-wrapper
+  > .data-table
+  tr.master-lookup-missing
+  td:last-child {
+  background-color: #fff7ed;
+}
+
+/*
+ * Sombra izquierda de la columna fija
+ * de Acciones.
+ */
+#fpTable th:last-child::before,
+#fpTable td:last-child::before,
+#rmTable th:last-child::before,
+#rmTable td:last-child::before,
+#bmTable th:last-child::before,
+#bmTable td:last-child::before,
+#splTable th:last-child::before,
+#splTable td:last-child::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -8px;
+  width: 8px;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    rgba(15, 23, 42, 0),
+    rgba(15, 23, 42, 0.18)
+  );
+}
