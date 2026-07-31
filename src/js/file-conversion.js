@@ -292,7 +292,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           if (newJobElement) {
             newJobElement.classList.remove("new-job");
           }
-        }, 3000);
+        }, 3001);
       }
     } catch (error) {
       console.error("Error fetching conversion jobs:", error);
