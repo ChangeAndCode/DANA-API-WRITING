@@ -1,62 +1,12 @@
 const path = require("path");
 const ExcelJS = require("exceljs");
-const { filterIgnoredMasterHeaders } = require("../data/masterFileRegistry");
-
 const {
-  normalizeCurrencyValue,
-} = require(
-  "./transformationUtils",
-);
-
-const MASTER_CURRENCY_MAPPED_FIELDS =
-  new Set([
-    "dutiableValueUsd",
-    "unitCostUsd",
-    "addedValueUsd",
-  ]);
-
-const MASTER_CURRENCY_HEADER_KEYS =
-  new Set([
-    "dutiablevalueusd",
-    "unitcostusd",
-    "unitvalueusd",
-    "addedvalueusd",
-  ]);
-
-const isCurrencyHeader = (
-  header,
-) => {
-  return (
-    MASTER_CURRENCY_MAPPED_FIELDS.has(
-      header?.mappedField || "",
-    ) ||
-    MASTER_CURRENCY_HEADER_KEYS.has(
-      header?.normalizedName || "",
-    )
-  );
-};
-
-const normalizeExportCurrencyValue = (
-  value,
-) => {
-  const normalizedValue =
-    normalizeCurrencyValue(value);
-
-  if (
-    normalizedValue === ""
-  ) {
-    return "";
-  }
-
-  const numericValue =
-    Number(normalizedValue);
-
-  return Number.isFinite(
-    numericValue,
-  )
-    ? numericValue
-    : normalizedValue;
-};
+  getCanonicalMasterHeaders,
+} = require("../data/masterFileRegistry");
+const {
+  canonicalizeMasterRecord,
+  getCanonicalCellValue,
+} = require("./masterFileCanonical");
 
 /**
  * Convierte el nombre de la hoja en un nombre válido
@@ -162,36 +112,8 @@ const createMasterFileWorkbook = async ({
       : 1;
 
   const headers =
-    filterIgnoredMasterHeaders(
+    getCanonicalMasterHeaders(
       masterFile.masterType,
-      masterFile.headers,
-    );
-
-  headers.sort(
-    (firstHeader, secondHeader) =>
-      firstHeader.columnIndex -
-      secondHeader.columnIndex,
-  );
-
-  const retainedColumnIndexes =
-    new Set(
-      headers.map((header) =>
-        Number(header.columnIndex),
-      ),
-    );
-
-  const currencyColumnIndexes =
-    new Set(
-      headers
-        .filter(
-          isCurrencyHeader,
-        )
-        .map(
-          (header) =>
-            Number(
-              header.columnIndex,
-            ),
-        ),
     );
 
   const headerRow =
@@ -200,15 +122,6 @@ const createMasterFileWorkbook = async ({
     );
 
   headers.forEach((header) => {
-    if (
-      !Number.isInteger(
-        header.columnIndex,
-      ) ||
-      header.columnIndex < 1
-    ) {
-      return;
-    }
-
     const headerCell =
       headerRow.getCell(
         header.columnIndex,
@@ -259,61 +172,50 @@ const createMasterFileWorkbook = async ({
     ? records
     : [];
 
-  activeRecords.forEach((record) => {
-    if (
-      !Number.isInteger(
-        record.sourceRow,
-      ) ||
-      record.sourceRow <=
-        headerRowNumber
-    ) {
-      return;
-    }
-
-    const row = worksheet.getRow(
-      record.sourceRow,
-    );
-
-    const rawCells = Array.isArray(
-      record.rawCells,
-    )
-      ? record.rawCells
-      : [];
-
-    rawCells.forEach((rawCell) => {
-      if (
-        !Number.isInteger(
-          rawCell.columnIndex,
-        ) ||
-        rawCell.columnIndex < 1 ||
-        !retainedColumnIndexes.has(
-          Number(
-            rawCell.columnIndex,
-          ),
-        )
-      ) {
-        return;
-      }
-
-      const exportValue =
-        currencyColumnIndexes.has(
-          Number(
-            rawCell.columnIndex,
-          ),
-        )
-          ? normalizeExportCurrencyValue(
-              rawCell.value,
-            )
-          : rawCell.value;
-
-      row.getCell(
-        rawCell.columnIndex,
-      ).value =
-        normalizeExportCellValue(
-          exportValue,
+  activeRecords.forEach(
+    (record, recordIndex) => {
+      const canonicalRecord =
+        canonicalizeMasterRecord(
+          masterFile.masterType,
+          record,
         );
-    });
-  });
+      const row =
+        worksheet.getRow(
+          headerRowNumber +
+            recordIndex +
+            1,
+        );
+
+      headers.forEach(
+        (header) => {
+          const cell =
+            row.getCell(
+              header.columnIndex,
+            );
+          const value =
+            getCanonicalCellValue(
+              masterFile.masterType,
+              canonicalRecord,
+              header,
+            );
+
+          cell.value =
+            normalizeExportCellValue(
+              value,
+            );
+
+          if (
+            header.mappedField ===
+              "importationHtsCode" ||
+            header.mappedField ===
+              "exportationHtsCode"
+          ) {
+            cell.numFmt = "@";
+          }
+        },
+      );
+    },
+  );
 
   worksheet.views = [
     {
@@ -321,6 +223,17 @@ const createMasterFileWorkbook = async ({
       ySplit: headerRowNumber,
     },
   ];
+
+  worksheet.autoFilter = {
+    from: {
+      row: headerRowNumber,
+      column: 1,
+    },
+    to: {
+      row: headerRowNumber,
+      column: headers.length,
+    },
+  };
 
   const generatedBuffer =
     await workbook.xlsx.writeBuffer();

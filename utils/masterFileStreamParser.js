@@ -7,7 +7,12 @@ const {
   normalizeMasterHeader,
   getMasterFileConfig,
   detectMasterTypeBySheetNames,
+  getCanonicalMasterHeaders,
 } = require("../data/masterFileRegistry");
+
+const {
+  canonicalizeMasterRecord,
+} = require("./masterFileCanonical");
 
 const {
   createParserError,
@@ -190,26 +195,11 @@ const parseMasterFileStream = async (filePath, options = {}) => {
             );
           }
 
-          publicHeaders = headers
-            .filter(
-              (header) =>
-                header.ignored !== true,
-            )
-            .map(({
-              originalName,
-              normalizedName,
-              columnIndex,
-              columnLetter,
-              mappedField,
-            }) => ({
-              originalName,
-              normalizedName,
-              columnIndex,
-              columnLetter,
-              mappedField,
-              ignored: false,
-            }));
-          partNumberColumn = partNumberHeader.columnLetter;
+          publicHeaders =
+            getCanonicalMasterHeaders(
+              detectedMasterType,
+            );
+          partNumberColumn = "A";
 
           if (typeof options.onMetadata === "function") {
             await options.onMetadata({
@@ -257,7 +247,12 @@ const parseMasterFileStream = async (filePath, options = {}) => {
           if (previousCount === 1) duplicateGroupCount += 1;
         }
 
-        batch.push(result.record);
+        batch.push(
+          canonicalizeMasterRecord(
+            detectedMasterType,
+            result.record,
+          ),
+        );
 
         if (batch.length >= batchSize) {
           if (typeof options.onBatch === "function") {

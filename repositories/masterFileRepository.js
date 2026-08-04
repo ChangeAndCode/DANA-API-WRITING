@@ -207,7 +207,7 @@ const findActiveMasterRecordsByMasterFileId =
         sourceRow: 1,
       })
       .select(
-        "sourceRow rawCells",
+        "masterType partNumber sourceRow rawCells normalizedValues",
       )
       .lean();
   };
@@ -232,9 +232,11 @@ const findActiveMasterRecordsForEditor = async ({
     .limit(pageSize)
     .select([
       "_id",
+      "masterType",
       "partNumber",
       "sourceRow",
       "rawCells",
+      "normalizedValues",
       "validationWarnings",
       "createdAt",
       "updatedAt",

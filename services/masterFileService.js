@@ -19,9 +19,13 @@ const {
 const { VALID_SITES } = require("../data/siteConfig");
 const {
   MASTER_TYPES,
-  filterIgnoredMasterHeaders,
+  getCanonicalMasterHeaders,
   filterMasterNormalizedValues,
 } = require("../data/masterFileRegistry");
+const {
+  canonicalizeMasterFile,
+  canonicalizeMasterRecord,
+} = require("../utils/masterFileCanonical");
 
 const VALID_MASTER_SITES = VALID_SITES;
 const VALID_MASTER_TYPES = Object.values(MASTER_TYPES);
@@ -1935,8 +1939,18 @@ const getMasterFileEditorData = async ({
   }
 
   return {
-    masterFile,
-    records: pageResult.records,
+    masterFile:
+      canonicalizeMasterFile(
+        masterFile,
+      ),
+    records:
+      pageResult.records.map(
+        (record) =>
+          canonicalizeMasterRecord(
+            masterFile.masterType,
+            record,
+          ),
+      ),
     pagination: {
       page: safePage,
       pageSize: safePageSize,
@@ -2308,7 +2322,9 @@ const updateMasterFileFromEditor =
                       masterType:
                         masterFile.masterType,
                       headers:
-                        masterFile.headers,
+                        getCanonicalMasterHeaders(
+                          masterFile.masterType,
+                        ),
                       cells:
                         receivedRow.cells,
                       sourceRow,
@@ -2489,6 +2505,11 @@ const updateMasterFileFromEditor =
                 {
                   name:
                     nextName,
+                  headers:
+                    getCanonicalMasterHeaders(
+                      masterFile.masterType,
+                    ),
+                  partNumberColumn: "A",
                   sites:
                     nextSites,
                   recordCount:
@@ -2683,18 +2704,8 @@ const copyMasterFile = async ({
             ? sourceMasterFile.toObject()
             : sourceMasterFile;
         const retainedHeaders =
-          filterIgnoredMasterHeaders(
+          getCanonicalMasterHeaders(
             sourceData.masterType,
-            sourceData.headers,
-          );
-        const retainedColumnIndexes =
-          new Set(
-            retainedHeaders.map(
-              (header) =>
-                Number(
-                  header.columnIndex,
-                ),
-            ),
           );
         const sourceRecords =
           await masterFileRepository
@@ -2717,8 +2728,7 @@ const copyMasterFile = async ({
                   sourceData.sourceSheet,
                 headerRow:
                   sourceData.headerRow,
-                partNumberColumn:
-                  sourceData.partNumberColumn,
+                partNumberColumn: "A",
                 headers:
                   retainedHeaders,
                 recordCount: 0,
@@ -2765,23 +2775,15 @@ const copyMasterFile = async ({
               sourceRow:
                 sourceRecord.sourceRow,
               rawCells:
-                Array.isArray(
-                  sourceRecord.rawCells,
-                )
-                  ? sourceRecord.rawCells.filter(
-                      (rawCell) =>
-                        retainedColumnIndexes.has(
-                          Number(
-                            rawCell.columnIndex,
-                          ),
-                        ),
-                    )
-                  : [],
-              normalizedValues:
-                filterMasterNormalizedValues(
+                canonicalizeMasterRecord(
                   sourceRecord.masterType,
-                  sourceRecord.normalizedValues,
-                ),
+                  sourceRecord,
+                ).rawCells,
+              normalizedValues:
+                canonicalizeMasterRecord(
+                  sourceRecord.masterType,
+                  sourceRecord,
+                ).normalizedValues,
               validationWarnings:
                 sourceRecord
                   .validationWarnings ||

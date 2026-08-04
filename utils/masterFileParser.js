@@ -22,7 +22,12 @@ const {
   getMasterFileConfig,
   detectMasterTypeBySheetNames,
   normalizeMasterHeader,
+  getCanonicalMasterHeaders,
 } = require("../data/masterFileRegistry");
+
+const {
+  canonicalizeMasterRecord,
+} = require("./masterFileCanonical");
 
 const HTS_FORMATTED_RE = /^\d{4}\.\d{2}\.\d{4}$/;
 
@@ -1496,7 +1501,12 @@ const parseMasterFileBuffer = async (
       continue;
     }
 
-    records.push(result.record);
+    records.push(
+      canonicalizeMasterRecord(
+        detectedMasterType,
+        result.record,
+      ),
+    );
   }
 
   if (skippedTemplateRows > 0) {
@@ -1520,26 +1530,9 @@ const parseMasterFileBuffer = async (
     );
   }
 
-  const publicHeaders = headers
-    .filter(
-      (header) =>
-        header.ignored !== true,
-    )
-    .map(
-      ({
-        originalName,
-        normalizedName,
-        columnIndex,
-        columnLetter,
-        mappedField,
-      }) => ({
-        originalName,
-        normalizedName,
-        columnIndex,
-        columnLetter,
-        mappedField,
-        ignored: false,
-      }),
+  const publicHeaders =
+    getCanonicalMasterHeaders(
+      detectedMasterType,
     );
 
   const imageCountIgnored =
@@ -1559,8 +1552,7 @@ const parseMasterFileBuffer = async (
       masterType: detectedMasterType,
       sourceSheet: worksheet.name,
       headerRow: config.headerRow,
-      partNumberColumn:
-        partNumberHeader.columnLetter,
+      partNumberColumn: "A",
       headers: publicHeaders,
       recordCount: records.length,
       imageCountIgnored,

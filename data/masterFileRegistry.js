@@ -74,11 +74,11 @@ const EXPORTATION_HTS_HEADER_RULES =
 const RAW_MATERIAL_DESCRIPTION_HEADER_RULES =
   createMasterHeaderAliasRules({
     dataElement:
-      "Customer Description",
+      "Description",
 
     aliases: [
+      "Customer Description",
       "Customer Description / DESCRIPTION",
-      "Description",
     ],
 
     target:
@@ -428,11 +428,6 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
     transform: "uom",
   },
 
-  uom: {
-    target: "unitOfMeasure",
-    transform: "uom",
-  },
-
   countryoforigin: {
     target: "countryOfOrigin",
     transform: "country",
@@ -505,6 +500,66 @@ const BILL_OF_MATERIALS_HEADER_RULES =
   });
 
 
+const FINISHED_PRODUCT_CANONICAL_HEADERS =
+  Object.freeze([
+    "Part Number",
+    "Description",
+    "Unit Weight Lb.",
+    "Dutiable Value (USD)",
+    "Filler",
+    "Added Value (USD)",
+    "Unit of Measure",
+    "Country of Origin",
+    "USA Importation HTS Code",
+    "USA Exportation Code",
+    "FDA Product Code",
+    "FDA Storage",
+    "FDA Country of Origin",
+    "FDA Marker",
+    ...Array.from(
+      { length: 6 },
+      (_, index) => [
+        `FDA Affirmation of Compliance Code ${index + 1}`,
+        `FDA Affirmation of Compliance Qualifier ${index + 1}`,
+      ],
+    ).flat(),
+    "NAFTA",
+    "Preference Criterion",
+    "Producer",
+    "Net Cost",
+    "Period (From)",
+    "Period (To)",
+    "USML (ITAR)",
+  ]);
+
+const RAW_MATERIAL_CANONICAL_HEADERS =
+  Object.freeze([
+    "Part Number",
+    "Description",
+    "Unit Weight Lb.",
+    "Unit Cost (USD)",
+    "Unit of Measure",
+    "Country of Origin",
+    "Importation HTS Code",
+    "Exportation HTS Code",
+    "ECCN",
+    "Filler",
+    "License Number (LCN)",
+    "License Exception",
+    "License Expiration date",
+    "USML (ITAR)",
+  ]);
+
+const BILL_OF_MATERIALS_CANONICAL_HEADERS =
+  Object.freeze([
+    "Finished Good Part Number",
+    "Component Part Number",
+    "Type",
+    "Quantity",
+    "Unit of Measure",
+    "Component classification",
+  ]);
+
 
 /**
  * Configuración de los dos tipos de archivos madre.
@@ -545,6 +600,9 @@ const MASTER_FILE_REGISTRY = Object.freeze({
       "description",
     ],
 
+    canonicalHeaders:
+      FINISHED_PRODUCT_CANONICAL_HEADERS,
+
     headerRules: FINISHED_PRODUCT_HEADER_RULES,
   }),
 
@@ -578,6 +636,10 @@ const MASTER_FILE_REGISTRY = Object.freeze({
       "partNumber",
       "description",
     ],
+
+    canonicalHeaders:
+      RAW_MATERIAL_CANONICAL_HEADERS,
+
     headerRules: RAW_MATERIAL_HEADER_RULES,
   }),
 
@@ -618,6 +680,9 @@ const MASTER_FILE_REGISTRY = Object.freeze({
     ],
 
     allowDuplicatePartNumbers: true,
+
+    canonicalHeaders:
+      BILL_OF_MATERIALS_CANONICAL_HEADERS,
 
     headerRules:
       BILL_OF_MATERIALS_HEADER_RULES,
@@ -745,6 +810,72 @@ const filterIgnoredMasterHeaders = (
   });
 };
 
+const toExcelColumnLetter = (
+  columnIndex,
+) => {
+  let value = Number(columnIndex);
+  let result = "";
+
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    result =
+      String.fromCharCode(
+        65 + remainder,
+      ) + result;
+    value = Math.floor(
+      (value - 1) / 26,
+    );
+  }
+
+  return result;
+};
+
+/**
+ * Devuelve el esquema publico y estable que usan editor,
+ * copias y descargas. Los alias solo se utilizan al leer.
+ */
+const getCanonicalMasterHeaders = (
+  masterType,
+) => {
+  const config =
+    getMasterFileConfig(masterType);
+
+  return config.canonicalHeaders.map(
+    (originalName, index) => {
+      const normalizedName =
+        normalizeMasterHeader(
+          originalName,
+        );
+      const rule =
+        config.headerRules[
+          normalizedName
+        ];
+
+      if (!rule) {
+        throw new Error(
+          `El encabezado canonico "${originalName}" no tiene una regla para "${masterType}".`,
+        );
+      }
+
+      const columnIndex =
+        index + 1;
+
+      return {
+        originalName,
+        normalizedName,
+        columnIndex,
+        columnLetter:
+          toExcelColumnLetter(
+            columnIndex,
+          ),
+        mappedField:
+          rule.target,
+        ignored: false,
+      };
+    },
+  );
+};
+
 const filterMasterNormalizedValues = (
   masterType,
   normalizedValues = {},
@@ -801,5 +932,6 @@ module.exports = {
   getMasterHeaderRule,
   shouldIgnoreMasterHeader,
   filterIgnoredMasterHeaders,
+  getCanonicalMasterHeaders,
   filterMasterNormalizedValues,
 };
