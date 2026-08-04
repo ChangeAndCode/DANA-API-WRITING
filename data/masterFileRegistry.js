@@ -178,20 +178,9 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
     transform: "partNumber",
   },
 
-  productfamily: {
-    target: "productFamily",
-    transform: "text",
-  },
-
   description: {
     target: "description",
     transform: "text",
-  },
-
-  unitnetweightg: {
-    target: "unitNetWeight",
-    transform: "number",
-    sourceUnit: "g",
   },
 
   unitweightlb: {
@@ -200,12 +189,12 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
     sourceUnit: "lb",
   },
 
-  materialcostusd: {
-    target: "materialCostUsd",
+  dutiablevalue: {
+    target: "dutiableValueUsd",
     transform: "number",
   },
 
-  dutiablevalue: {
+  dutiablevalueusd: {
     target: "dutiableValueUsd",
     transform: "number",
   },
@@ -217,11 +206,6 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
 
   addedvalueusd: {
     target: "addedValueUsd",
-    transform: "number",
-  },
-
-  totalunitcost: {
-    target: "totalUnitCostUsd",
     transform: "number",
   },
 
@@ -256,6 +240,11 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
   },
 
   fdacountryorigin: {
+    target: "fdaCountryOfOrigin",
+    transform: "country",
+  },
+
+  fdacountryoforigin: {
     target: "fdaCountryOfOrigin",
     transform: "country",
   },
@@ -349,59 +338,49 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
     component: "qualifier",
   },
 
-  descriptionforcustomspurposes: {
-    target: "descriptionForCustoms",
-    transform: "text",
-  },
+  ...createMasterHeaderAliasRules({
+    dataElement: "NAFTA",
+    aliases: ["NAFTA Eligible"],
+    target: "nafta",
+    transform: "uppercaseText",
+  }),
 
-  compositionmaterial: {
-    target: "compositionMaterial",
-    transform: "text",
-  },
+  ...createMasterHeaderAliasRules({
+    dataElement: "Preference Criterion",
+    aliases: ["NAFTA Criterion"],
+    target: "preferenceCriterion",
+    transform: "uppercaseText",
+  }),
 
-  mainfunction: {
-    target: "mainFunction",
+  ...createMasterHeaderAliasRules({
+    dataElement: "Producer",
+    aliases: ["NAFTA Producer"],
+    target: "producer",
     transform: "text",
-  },
+  }),
 
-  technicalinformation: {
-    target: "technicalInformation",
-    transform: "text",
-  },
+  ...createMasterHeaderAliasRules({
+    dataElement: "Net Cost",
+    aliases: ["NAFTA Net Cost"],
+    target: "netCost",
+    transform: "uppercaseText",
+  }),
 
-  spanishdescription: {
-    target: "spanishDescription",
-    transform: "text",
-  },
+  ...createMasterHeaderAliasRules({
+    dataElement: "Period (From)",
+    aliases: ["NAFTA From", "Start Date"],
+    target: "periodFrom",
+    transform: "date",
+  }),
 
-  mxtariffcode: {
-    target: "mxTariffCode",
-    transform: "hts",
-  },
-
-  regulations: {
-    target: "regulations",
-    transform: "text",
-  },
-
-  comentarios: {
-    target: "comments",
-    transform: "text",
-  },
-
-  comments: {
-    target: "comments",
-    transform: "text",
-  },
-
-  clientcomments: {
-    target: "clientComments",
-    transform: "text",
-  },
+  ...createMasterHeaderAliasRules({
+    dataElement: "Period (To)",
+    aliases: ["NAFTA To", "End Date"],
+    target: "periodTo",
+    transform: "date",
+  }),
 
   ...EXPORTATION_HTS_HEADER_RULES,
-  ...LICENSE_NUMBER_HEADER_RULES,
-  ...LICENSE_EXCEPTION_HEADER_RULES,
   ...USML_ITAR_HEADER_RULES,
 });
 
@@ -416,21 +395,10 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
 
   ...RAW_MATERIAL_DESCRIPTION_HEADER_RULES,
 
-  itemtypebygroupproductfamily: {
-    target: "productFamily",
-    transform: "text",
-  },
-
-  unitnetweightkgs: {
+  unitweightlb: {
     target: "unitNetWeight",
-    transform: "number",
-    sourceUnit: "kg",
-  },
-
-  unitnetweightkg: {
-    target: "unitNetWeight",
-    transform: "number",
-    sourceUnit: "kg",
+    transform: "pounds",
+    sourceUnit: "lb",
   },
 
   unitnetweightlbs: {
@@ -461,13 +429,18 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
   },
 
   uom: {
-    target: "uom",
-    transform: "text",
+    target: "unitOfMeasure",
+    transform: "uom",
   },
 
   countryoforigin: {
     target: "countryOfOrigin",
     transform: "country",
+  },
+
+  importationhtscode: {
+    target: "importationHtsCode",
+    transform: "hts",
   },
 
   usimportationhtscode: {
@@ -485,91 +458,17 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
     transform: "uppercaseText",
   },
 
-  descriptionforcustomspurposesenglish: {
-    target: "descriptionForCustoms",
+  filler: {
+    target: "filler",
     transform: "text",
   },
 
-  descriptionforcustomspurposes: {
-    target: "descriptionForCustoms",
-    transform: "text",
-  },
-
-  technicalinformationcompositionmaterial: {
-    target: "technicalInformation",
-    transform: "text",
-  },
-
-  compositionmaterial: {
-    target: "compositionMaterial",
-    transform: "text",
-  },
-
-  functionandspecificuse: {
-    target: "mainFunction",
-    transform: "text",
-  },
-
-  mainfunction: {
-    target: "mainFunction",
-    transform: "text",
-  },
-
-  spanishdescription: {
-    target: "spanishDescription",
-    transform: "text",
-  },
-
-  mxtariffcode: {
-    target: "mxTariffCode",
-    transform: "hts",
-  },
-
-  regulations: {
-    target: "regulations",
-    transform: "text",
-  },
-
-  comments: {
-    target: "comments",
-    transform: "text",
-  },
-
-  comentarios: {
-    target: "comments",
-    transform: "text",
-  },
-
-  clientcomments: {
-    target: "clientComments",
-    transform: "text",
-  },
   ...EXPORTATION_HTS_HEADER_RULES,
   ...LICENSE_NUMBER_HEADER_RULES,
   ...LICENSE_EXCEPTION_HEADER_RULES,
   ...LICENSE_EXPIRATION_DATE_HEADER_RULES,
   ...USML_ITAR_HEADER_RULES,
 });
-
-const BOM_CUSTOMIZER_HEADER_RULES =
-  Object.freeze(
-    Object.fromEntries(
-      Array.from(
-        { length: 10 },
-        (_, index) => {
-          const number = index + 1;
-
-          return [
-            `customizer${number}`,
-            Object.freeze({
-              target: `customizer${number}`,
-              transform: "text",
-            }),
-          ];
-        },
-      ),
-    ),
-  );
 
 const BILL_OF_MATERIALS_HEADER_RULES =
   Object.freeze({
@@ -603,94 +502,6 @@ const BILL_OF_MATERIALS_HEADER_RULES =
       transform: "text",
     },
 
-    description: {
-      target: "description",
-      transform: "text",
-    },
-
-    unitvalueusd: {
-      target: "unitCostUsd",
-      transform: "number",
-    },
-
-    addedvalueusd: {
-      target: "addedValueUsd",
-      transform: "number",
-    },
-
-    totalvalueusd: {
-      target: "totalValueUsd",
-      transform: "number",
-    },
-
-    unitnetweight: {
-      target: "unitNetWeight",
-      transform: "number",
-    },
-
-    countryoforigin: {
-      target: "countryOfOrigin",
-      transform: "country",
-    },
-
-    eccn: {
-      target: "eccn",
-      transform: "uppercaseText",
-    },
-
-    usimphtscode: {
-      target: "importationHtsCode",
-      transform: "hts",
-    },
-
-    usexphtscode: {
-      target: "exportationHtsCode",
-      transform: "hts",
-    },
-
-    regime: {
-      target: "regime",
-      transform: "text",
-    },
-
-    brand: {
-      target: "brand",
-      transform: "text",
-    },
-
-    model: {
-      target: "model",
-      transform: "text",
-    },
-
-    serial: {
-      target: "serial",
-      transform: "text",
-    },
-
-    powersourcetype: {
-      target: "powerSourceType",
-      transform: "text",
-    },
-
-    capacity: {
-      target: "capacity",
-      transform: "text",
-    },
-
-    mainfunction: {
-      target: "mainFunction",
-      transform: "text",
-    },
-
-    ponumber: {
-      target: "poNumber",
-      transform: "text",
-    },
-
-    ...LICENSE_NUMBER_HEADER_RULES,
-    ...LICENSE_EXCEPTION_HEADER_RULES,
-    ...BOM_CUSTOMIZER_HEADER_RULES,
   });
 
 
@@ -914,11 +725,69 @@ const filterIgnoredMasterHeaders = (
 ) => {
   if (!Array.isArray(headers)) return [];
 
-  return headers.filter((header) =>
-    !shouldIgnoreMasterHeader(
-      masterType,
+  return headers.filter((header) => {
+    const headerName =
       header?.originalName ||
-        header?.normalizedName,
+      header?.normalizedName;
+
+    return (
+      !shouldIgnoreMasterHeader(
+        masterType,
+        headerName,
+      ) &&
+      Boolean(
+        getMasterHeaderRule(
+          masterType,
+          headerName,
+        ),
+      )
+    );
+  });
+};
+
+const filterMasterNormalizedValues = (
+  masterType,
+  normalizedValues = {},
+) => {
+  const config =
+    getMasterFileConfig(masterType);
+
+  const sourceValues =
+    typeof normalizedValues?.toObject ===
+    "function"
+      ? normalizedValues.toObject()
+      : normalizedValues;
+
+  if (
+    !sourceValues ||
+    typeof sourceValues !== "object" ||
+    Array.isArray(sourceValues)
+  ) {
+    return {};
+  }
+
+  const allowedFields =
+    new Set(
+      Object.values(
+        config.headerRules,
+      )
+        .map((rule) => rule.target)
+        .filter(
+          (target) =>
+            target !== "partNumber",
+        ),
+    );
+
+  if (allowedFields.has("unitNetWeight")) {
+    allowedFields.add(
+      "unitNetWeightSourceUnit",
+    );
+  }
+
+  return Object.fromEntries(
+    Object.entries(sourceValues).filter(
+      ([field]) =>
+        allowedFields.has(field),
     ),
   );
 };
@@ -932,4 +801,5 @@ module.exports = {
   getMasterHeaderRule,
   shouldIgnoreMasterHeader,
   filterIgnoredMasterHeaders,
+  filterMasterNormalizedValues,
 };

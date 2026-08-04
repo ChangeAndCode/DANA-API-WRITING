@@ -64,10 +64,14 @@ const buildStreamingHeaders = (headerRow, config) => {
     if (!originalHeader) continue;
 
     const normalizedHeader = normalizeMasterHeader(originalHeader);
-    const ignored = config.ignoredHeaderKeys.includes(normalizedHeader);
-    const rule = ignored
+    const explicitlyIgnored =
+      config.ignoredHeaderKeys.includes(
+        normalizedHeader,
+      );
+    const rule = explicitlyIgnored
       ? null
       : resolveHeaderRule(config, columnLetter, normalizedHeader);
+    const ignored = explicitlyIgnored || !rule;
 
     headers.push({
       originalName: originalHeader,

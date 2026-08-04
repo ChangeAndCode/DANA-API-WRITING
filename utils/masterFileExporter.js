@@ -10,25 +10,17 @@ const {
 
 const MASTER_CURRENCY_MAPPED_FIELDS =
   new Set([
-    "materialCostUsd",
     "dutiableValueUsd",
     "unitCostUsd",
-    "unitValueUsd",
     "addedValueUsd",
-    "totalUnitCostUsd",
-    "totalValueUsd",
   ]);
 
 const MASTER_CURRENCY_HEADER_KEYS =
   new Set([
-    "materialcostusd",
     "dutiablevalueusd",
     "unitcostusd",
     "unitvalueusd",
     "addedvalueusd",
-    "totalunitcost",
-    "totalunitcostusd",
-    "totalvalueusd",
   ]);
 
 const isCurrencyHeader = (

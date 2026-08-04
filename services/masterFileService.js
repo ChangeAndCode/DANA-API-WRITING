@@ -20,6 +20,7 @@ const { VALID_SITES } = require("../data/siteConfig");
 const {
   MASTER_TYPES,
   filterIgnoredMasterHeaders,
+  filterMasterNormalizedValues,
 } = require("../data/masterFileRegistry");
 
 const VALID_MASTER_SITES = VALID_SITES;
@@ -725,8 +726,10 @@ const lookupMasterRecordByPartNumber =
         sourceRow:
           selectedRecord.sourceRow,
         normalizedValues:
-          selectedRecord
-            .normalizedValues || {},
+          filterMasterNormalizedValues(
+            selectedRecord.masterType,
+            selectedRecord.normalizedValues,
+          ),
         validationWarnings:
           selectedRecord
             .validationWarnings || [],
@@ -1174,10 +1177,7 @@ const buildImportedMasterValues = (
     const values = {
       ...commonValues,
       "Unit Weight Lb.": normalizedValues.unitNetWeight,
-      "Dutiable Value (USD)": getFirstNormalizedValue(
-        normalizedValues,
-        ["dutiableValueUsd", "materialCostUsd"],
-      ),
+      "Dutiable Value (USD)": normalizedValues.dutiableValueUsd,
       "Filler": normalizedValues.filler,
       "Added Value (USD)": normalizedValues.addedValueUsd,
       "USA Importation HTS Code": normalizedValues.importationHtsCode,
@@ -1187,6 +1187,16 @@ const buildImportedMasterValues = (
       "FDA Country of Origin": normalizedValues.fdaCountryOfOrigin,
       "FDA Marker": normalizedValues.fdaMarker,
       "USML (ITAR)": normalizedValues.usmlItar,
+      "NAFTA": normalizedValues.nafta,
+      "Preference Criterion": normalizedValues.preferenceCriterion,
+      "Producer": normalizedValues.producer,
+      "Net Cost": normalizedValues.netCost,
+      "Period (From)": formatImportedDate(
+        normalizedValues.periodFrom,
+      ),
+      "Period (To)": formatImportedDate(
+        normalizedValues.periodTo,
+      ),
     };
 
     for (let sequence = 1; sequence <= 6; sequence += 1) {
@@ -1223,7 +1233,7 @@ const buildImportedMasterValues = (
       ...commonValues,
       "Unit Value (USD)": getFirstNormalizedValue(
         normalizedValues,
-        ["unitCostUsd", "materialCostUsd", "totalUnitCostUsd"],
+        ["unitCostUsd", "dutiableValueUsd"],
       ),
       "Added Value (USD)": normalizedValues.addedValueUsd,
       "Unit Net Weight": normalizedValues.unitNetWeight,
@@ -1232,7 +1242,6 @@ const buildImportedMasterValues = (
       "License Exception": normalizedValues.licenseException,
       "US IMP HTS Code": normalizedValues.importationHtsCode,
       "US EXP HTS Code": normalizedValues.exportationHtsCode,
-      "Main Function": normalizedValues.mainFunction,
     };
   }
 
@@ -1330,7 +1339,14 @@ const enrichImportedRowsFromMasterFiles = async ({
       (record) => String(record.masterFileId?._id || "") === newestFileId,
     );
     const signatures = new Set(
-      newestRecords.map((record) => JSON.stringify(record.normalizedValues || {})),
+      newestRecords.map((record) =>
+        JSON.stringify(
+          filterMasterNormalizedValues(
+            masterType,
+            record.normalizedValues,
+          ),
+        ),
+      ),
     );
 
     if (signatures.size > 1) return { status: "ambiguous" };
@@ -1387,7 +1403,10 @@ const enrichImportedRowsFromMasterFiles = async ({
 
     const valuesToFill = buildImportedMasterValues(
       documentType,
-      matches[0].record.normalizedValues || {},
+      filterMasterNormalizedValues(
+        matches[0].record.masterType,
+        matches[0].record.normalizedValues,
+      ),
     );
     Object.entries(valuesToFill).forEach(([fieldName, value]) => {
       if (
@@ -2759,9 +2778,10 @@ const copyMasterFile = async ({
                     )
                   : [],
               normalizedValues:
-                sourceRecord
-                  .normalizedValues ||
-                {},
+                filterMasterNormalizedValues(
+                  sourceRecord.masterType,
+                  sourceRecord.normalizedValues,
+                ),
               validationWarnings:
                 sourceRecord
                   .validationWarnings ||

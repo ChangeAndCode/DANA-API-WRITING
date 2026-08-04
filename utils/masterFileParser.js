@@ -155,25 +155,17 @@ const parseNumericValue = (value) => {
 
 const MASTER_CURRENCY_MAPPED_FIELDS =
   new Set([
-    "materialCostUsd",
     "dutiableValueUsd",
     "unitCostUsd",
-    "unitValueUsd",
     "addedValueUsd",
-    "totalUnitCostUsd",
-    "totalValueUsd",
   ]);
 
 const MASTER_CURRENCY_HEADER_KEYS =
   new Set([
-    "materialcostusd",
     "dutiablevalueusd",
     "unitcostusd",
     "unitvalueusd",
     "addedvalueusd",
-    "totalunitcost",
-    "totalunitcostusd",
-    "totalvalueusd",
   ]);
 
 const isMasterCurrencyHeader = (
@@ -467,12 +459,12 @@ const buildHeaders = (
     const normalizedHeader =
       normalizeMasterHeader(safeHeader);
 
-    const ignored =
+    const explicitlyIgnored =
       config.ignoredHeaderKeys.includes(
         normalizedHeader,
       );
 
-    const rule = ignored
+    const rule = explicitlyIgnored
       ? null
       : resolveHeaderRule(
           config,
@@ -480,6 +472,9 @@ const buildHeaders = (
           normalizedHeader,
         );
 
+    const ignored =
+      explicitlyIgnored ||
+      !rule;
     headers.push({
       originalName: safeHeader,
       normalizedName: normalizedHeader,
@@ -625,19 +620,22 @@ const buildMasterRecordFromEditorRow = ({
           header.columnLetter,
         ).toUpperCase();
 
-      const ignored =
+      const explicitlyIgnored =
         header.ignored === true ||
         config.ignoredHeaderKeys.includes(
           normalizedName,
         );
 
-      const rule = ignored
+      const rule = explicitlyIgnored
         ? null
         : resolveHeaderRule(
             config,
             columnLetter,
             normalizedName,
           );
+      const ignored =
+        explicitlyIgnored ||
+        !rule;
 
       return {
         originalName,

@@ -93,21 +93,6 @@ const fdaAffirmationSchema = new mongoose.Schema(
   },
 );
 
-const customizerSchemaFields =
-  Object.fromEntries(
-    Array.from(
-      { length: 10 },
-      (_, index) => [
-        `customizer${index + 1}`,
-        {
-          type: String,
-          trim: true,
-          default: "",
-        },
-      ],
-    ),
-  );
-
 const normalizedValuesSchema = new mongoose.Schema(
   {
     componentPartNumber: {
@@ -130,11 +115,6 @@ const normalizedValuesSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
-    productFamily: {
-      type: String,
-      trim: true,
-      default: "",
-    },
     description: {
       type: String,
       trim: true,
@@ -147,10 +127,7 @@ const normalizedValuesSchema = new mongoose.Schema(
       type: String,
       trim: true,
       lowercase: true,
-      enum: ["g", "kg", "lb"],
-    },
-    materialCostUsd: {
-      type: Number,
+      enum: ["lb"],
     },
     dutiableValueUsd: {
       type: Number,
@@ -161,21 +138,15 @@ const normalizedValuesSchema = new mongoose.Schema(
     addedValueUsd: {
       type: Number,
     },
-    totalUnitCostUsd: {
-      type: Number,
-    },
-    totalValueUsd: {
-      type: Number,
+    filler: {
+      type: String,
+      trim: true,
+      default: "",
     },
     unitOfMeasure: {
       type: String,
       trim: true,
       uppercase: true,
-      default: "",
-    },
-    uom: {
-      type: String,
-      trim: true,
       default: "",
     },
     countryOfOrigin: {
@@ -190,11 +161,6 @@ const normalizedValuesSchema = new mongoose.Schema(
       default: "",
     },
     exportationHtsCode: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    scheduleBCode: {
       type: String,
       trim: true,
       default: "",
@@ -249,87 +215,35 @@ const normalizedValuesSchema = new mongoose.Schema(
       type: [fdaAffirmationSchema],
       default: [],
     },
-    descriptionForCustoms: {
+    nafta: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    preferenceCriterion: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    producer: {
       type: String,
       trim: true,
       default: "",
     },
-    compositionMaterial: {
+    netCost: {
       type: String,
       trim: true,
+      uppercase: true,
       default: "",
     },
-    mainFunction: {
-      type: String,
-      trim: true,
-      default: "",
+    periodFrom: {
+      type: Date,
     },
-    technicalInformation: {
-      type: String,
-      trim: true,
-      default: "",
+    periodTo: {
+      type: Date,
     },
-    spanishDescription: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    mxTariffCode: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    regulations: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    comments: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    clientComments: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    regime: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    brand: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    model: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    serial: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    powerSourceType: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    capacity: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    poNumber: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    ...customizerSchemaFields,
   },
   {
     _id: false,
