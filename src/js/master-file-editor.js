@@ -26,6 +26,13 @@ const masterEditorAddRowButton = document.getElementById("masterEditorAddRowButt
 
 const masterEditorBackLink = document.getElementById("masterEditorBackLink");
 
+const masterEditorPagination = document.getElementById("masterEditorPagination");
+const masterEditorPageSummary = document.getElementById("masterEditorPageSummary");
+const masterEditorFirstPageButton = document.getElementById("masterEditorFirstPageButton");
+const masterEditorPreviousPageButton = document.getElementById("masterEditorPreviousPageButton");
+const masterEditorNextPageButton = document.getElementById("masterEditorNextPageButton");
+const masterEditorLastPageButton = document.getElementById("masterEditorLastPageButton");
+
 const masterEditorExitModal = document.getElementById("masterEditorExitModal");
 
 const masterEditorExitCancelButton = document.getElementById("masterEditorExitCancelButton");
@@ -40,6 +47,10 @@ let orderedMasterHeaders = [];
 const deletedMasterRecordIds =
   new Set();
 let pendingEditorNavigation = "";
+const MASTER_EDITOR_PAGE_SIZE = 1000;
+let currentEditorPage = 1;
+let currentEditorTotalPages = 1;
+let currentEditorTotalRecords = 0;
 const masterCatalogState = {
   unitOfMeasure: {
     options: [],
@@ -439,7 +450,17 @@ const configureEditorPermissions = () => {
     });
 
   masterEditorAddRowButton.disabled =
-    contentDisabled;
+    contentDisabled ||
+    currentEditorPage < currentEditorTotalPages;
+
+  masterEditorFirstPageButton.disabled =
+    editorIsSaving || currentEditorPage <= 1;
+  masterEditorPreviousPageButton.disabled =
+    editorIsSaving || currentEditorPage <= 1;
+  masterEditorNextPageButton.disabled =
+    editorIsSaving || currentEditorPage >= currentEditorTotalPages;
+  masterEditorLastPageButton.disabled =
+    editorIsSaving || currentEditorPage >= currentEditorTotalPages;
 };
 
 
@@ -490,11 +511,16 @@ const loadCurrentUser = async () => {
   return data.user;
 };
 
-const loadMasterEditorData = async (masterFileId) => {
+const loadMasterEditorData = async (
+  masterFileId,
+  page = currentEditorPage,
+) => {
   const response = await fetch(
     `/api/master-files/${encodeURIComponent(
       masterFileId,
-    )}/editor`,
+    )}/editor?page=${encodeURIComponent(
+      page,
+    )}&pageSize=${MASTER_EDITOR_PAGE_SIZE}`,
   );
 
   const data = await response
@@ -1719,12 +1745,87 @@ const renderMasterTable = (
   );
 };
 
+const renderMasterPagination = (pagination = {}) => {
+  currentEditorPage = Number(pagination.page) || 1;
+  currentEditorTotalPages = Number(pagination.totalPages) || 1;
+  currentEditorTotalRecords = Number(pagination.totalRecords) || 0;
+
+  const firstRecord = currentEditorTotalRecords === 0
+    ? 0
+    : ((currentEditorPage - 1) * MASTER_EDITOR_PAGE_SIZE) + 1;
+  const lastRecord = Math.min(
+    currentEditorPage * MASTER_EDITOR_PAGE_SIZE,
+    currentEditorTotalRecords,
+  );
+
+  masterEditorPageSummary.textContent =
+    `Página ${currentEditorPage} de ${currentEditorTotalPages} · ` +
+    `Registros ${firstRecord}-${lastRecord} de ${currentEditorTotalRecords}`;
+
+  const isFirstPage = currentEditorPage <= 1;
+  const isLastPage = currentEditorPage >= currentEditorTotalPages;
+  masterEditorFirstPageButton.disabled = isFirstPage || editorIsSaving;
+  masterEditorPreviousPageButton.disabled = isFirstPage || editorIsSaving;
+  masterEditorNextPageButton.disabled = isLastPage || editorIsSaving;
+  masterEditorLastPageButton.disabled = isLastPage || editorIsSaving;
+  masterEditorPagination.classList.remove("hidden");
+};
+
+const loadMasterEditorPage = async (targetPage) => {
+  if (editorIsSaving || targetPage === currentEditorPage) return;
+
+  if (editorHasChanges) {
+    showEditorMessage(
+      "Guarda los cambios de esta página antes de continuar.",
+      "warning",
+    );
+    masterEditorSaveButton.focus();
+    return;
+  }
+
+  showEditorMessage("Cargando página...", "warning");
+  const editorData = await loadMasterEditorData(
+    getMasterFileId(),
+    targetPage,
+  );
+
+  currentMasterRevision = Number(editorData.masterFile.revision);
+  renderMasterMetadata(editorData.masterFile);
+  renderMasterTable(editorData.masterFile.headers, editorData.records);
+  renderMasterPagination(editorData.pagination);
+  configureEditorPermissions();
+  setEditorDirty(false);
+  showEditorMessage(
+    `Página ${currentEditorPage} cargada. Registros mostrados: ${editorData.records.length}.`,
+    "success",
+  );
+};
+
 const addMasterEditorRow = (
   {
     focusFirstCell = true,
     notifyChanges = true,
   } = {},
 ) => {
+  if (currentEditorPage < currentEditorTotalPages) {
+    showEditorMessage(
+      "Para agregar filas, navega primero a la última página.",
+      "warning",
+    );
+    return null;
+  }
+
+  if (
+    masterEditorTableBody.querySelectorAll("tr").length >=
+    MASTER_EDITOR_PAGE_SIZE
+  ) {
+    showEditorMessage(
+      "Esta página ya contiene 1,000 filas. Guarda o elimina una fila antes de agregar otra.",
+      "warning",
+    );
+    return null;
+  }
+
   if (
     !canEditMasterContent() ||
     orderedMasterHeaders.length === 0
@@ -2090,7 +2191,8 @@ const ensureMasterRowsForPaste = (
   );
 
   while (
-    rows.length <= requiredRowIndex
+    rows.length <= requiredRowIndex &&
+    rows.length < MASTER_EDITOR_PAGE_SIZE
   ) {
     addMasterEditorRow({
       focusFirstCell: false,
@@ -2349,12 +2451,17 @@ const validateMasterEditorBeforeSave = (
   rows,
 ) => {
   if (rows.length === 0) {
-    showEditorMessage(
-      "El archivo madre debe conservar al menos una fila.",
-      "error",
-    );
+    if (
+      currentEditorTotalRecords -
+        deletedMasterRecordIds.size < 1
+    ) {
+      showEditorMessage(
+        "El archivo madre debe conservar al menos una fila.",
+        "error",
+      );
 
-    return false;
+      return false;
+    }
   }
 
   const isAdmin =
@@ -2584,9 +2691,21 @@ const saveMasterEditorChanges =
        * las filas nuevas reciban el ID generado
        * por MongoDB.
        */
+      const refreshedPage = Math.min(
+        currentEditorPage,
+        Math.max(
+          1,
+          Math.ceil(
+            Number(data.masterFile?.recordCount || 0) /
+              MASTER_EDITOR_PAGE_SIZE,
+          ),
+        ),
+      );
+
       const refreshedData =
         await loadMasterEditorData(
           masterFileId,
+          refreshedPage,
         );
 
       currentMasterRevision =
@@ -2606,6 +2725,10 @@ const saveMasterEditorChanges =
           .headers,
 
         refreshedData.records,
+      );
+
+      renderMasterPagination(
+        refreshedData.pagination,
       );
 
       showEditorMessage(
@@ -2686,11 +2809,12 @@ const initializeMasterEditor = async () => {
         "hidden",
       );
 
-      masterEditorScopeMessage.textContent =
-        "Como administrador podrás modificar el nombre, las sedes y el contenido.";
+      masterEditorScopeMessage.textContent = "";
+      masterEditorScopeMessage.classList.add("hidden");
     } else {
       masterEditorScopeMessage.textContent =
         "Podrás modificar el contenido de los archivos disponibles para tu sede.";
+      masterEditorScopeMessage.classList.remove("hidden");
     }
 
     masterEditorPanel.classList.remove(
@@ -2732,12 +2856,16 @@ const initializeMasterEditor = async () => {
       editorData.records,
     );
 
+    renderMasterPagination(
+      editorData.pagination,
+    );
+
     configureEditorPermissions();
     setEditorDirty(false);
 
     const loadedRecordCount =
       Number(
-        editorData.loadedRecordCount,
+        editorData.pagination?.totalRecords,
       ) || 0;
 
     showEditorMessage(
@@ -2798,6 +2926,33 @@ document.addEventListener("DOMContentLoaded",() => {
     masterEditorSaveButton.addEventListener(
       "click",
       saveMasterEditorChanges,
+    );
+
+    const requestEditorPage = (getTargetPage) => {
+      loadMasterEditorPage(getTargetPage()).catch((error) => {
+        console.error("Error al cambiar de página:", error);
+        showEditorMessage(
+          error.message || "No fue posible cargar la página.",
+          "error",
+        );
+      });
+    };
+
+    masterEditorFirstPageButton.addEventListener(
+      "click",
+      () => requestEditorPage(() => 1),
+    );
+    masterEditorPreviousPageButton.addEventListener(
+      "click",
+      () => requestEditorPage(() => Math.max(1, currentEditorPage - 1)),
+    );
+    masterEditorNextPageButton.addEventListener(
+      "click",
+      () => requestEditorPage(() => Math.min(currentEditorTotalPages, currentEditorPage + 1)),
+    );
+    masterEditorLastPageButton.addEventListener(
+      "click",
+      () => requestEditorPage(() => currentEditorTotalPages),
     );
 
     masterEditorExitCancelButton.addEventListener(

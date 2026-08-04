@@ -22,6 +22,7 @@ const { convertXlsToXlsx } = require("../utils/xlsConverter");
 const masterFileService = require(
   "../services/masterFileService",
 );
+const { VALID_SITES } = require("../data/siteConfig");
 
 // Middleware de Multer (configúralo una vez)
 const multer = require("multer");
@@ -62,7 +63,7 @@ const requireAdminFileModelByType = (type) => {
 const normalizeAdminFileName = (value) =>
   typeof value === "string" ? value.trim() : "";
 
-const VALID_USER_SITES = ["gaiim", "p1a"];
+const VALID_USER_SITES = VALID_SITES;
 
 const normalizeUserSite = (value) =>
   typeof value === "string" ? value.trim() : "";
@@ -650,9 +651,45 @@ const importManualFile = async (req, res) => {
 
     let masterLookupSummary = null;
 
+    if (documentType === "splScrap") {
+      const selectedTypeOfGoods = String(
+        req.body.typeOfGoods || "",
+      ).trim().toUpperCase();
+
+      if (!["FG", "RM", "EQ"].includes(selectedTypeOfGoods)) {
+        throw createHttpError(
+          400,
+          "Debes seleccionar Type of goods (FG, RM o EQ).",
+          { code: "TYPE_OF_GOODS_REQUIRED" },
+        );
+      }
+
+      const shipmentFields = [
+        "Customer(southbound) / Ship to (northbound)",
+        "Type of shipment",
+        "Expected date of arrival",
+        "Waybill number",
+        "Total gross weight",
+        "Total bundles",
+      ];
+
+      rows = rows.map((row) => {
+        const cleanRow = { ...(row || {}) };
+        shipmentFields.forEach((fieldName) => {
+          cleanRow[fieldName] = "";
+        });
+        cleanRow["Type of goods"] = selectedTypeOfGoods;
+        return cleanRow;
+      });
+    }
+
     if (
-      documentType ===
-      "billOfMaterials"
+      [
+        "finishedProduct",
+        "rawMaterial",
+        "billOfMaterials",
+        "splScrap",
+      ].includes(documentType)
     ) {
       const requestedSite =
         resolveDocumentSiteForWrite(
@@ -663,7 +700,7 @@ const importManualFile = async (req, res) => {
       if (!requestedSite) {
         throw createHttpError(
           400,
-          "Debes seleccionar una sede para consultar el archivo madre B.O.M.",
+          "Debes seleccionar una sede para consultar los archivos madre.",
           {
             code:
               "DOCUMENT_SITE_REQUIRED",
@@ -673,9 +710,10 @@ const importManualFile = async (req, res) => {
 
       const enrichmentResult =
         await masterFileService
-          .enrichBillOfMaterialsRows({
+          .enrichImportedRowsFromMasterFiles({
             user: req.user,
             requestedSite,
+            documentType,
             rows,
           });
 

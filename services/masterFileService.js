@@ -13,17 +13,11 @@ const {
 } = require(
   "../utils/masterFileExporter"
 );
+const { VALID_SITES } = require("../data/siteConfig");
+const { MASTER_TYPES } = require("../data/masterFileRegistry");
 
-const VALID_MASTER_SITES = [
-  "gaiim",
-  "p1a",
-];
-
-const VALID_MASTER_TYPES = [
-  "finishedProduct",
-  "rawMaterial",
-  "billOfMaterials",
-];
+const VALID_MASTER_SITES = VALID_SITES;
+const VALID_MASTER_TYPES = Object.values(MASTER_TYPES);
 
 /**
  * Genera errores que posteriormente podrá interpretar
@@ -989,7 +983,8 @@ const enrichBillOfMaterialsRows =
 
                 return JSON.stringify([
                   normalizeValue(
-                    values.bomType,
+                    values.bomType ||
+                      values.componentType,
                   ),
 
                   String(
@@ -1058,7 +1053,8 @@ const enrichBillOfMaterialsRows =
         const valuesToFill = [
           [
             "Type",
-            normalizedValues.bomType,
+            normalizedValues.bomType ||
+              normalizedValues.componentType,
           ],
           [
             "Quantity",
@@ -1122,6 +1118,295 @@ const enrichBillOfMaterialsRows =
       },
     };
   };
+
+const isEmptyImportedCell = (value) =>
+  value === undefined ||
+  value === null ||
+  String(value).trim() === "";
+
+const getFirstNormalizedValue = (values, keys) => {
+  for (const key of keys) {
+    if (!isEmptyImportedCell(values?.[key])) {
+      return values[key];
+    }
+  }
+  return "";
+};
+
+const formatImportedDate = (value) => {
+  if (isEmptyImportedCell(value)) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0"),
+  ].join("");
+};
+
+const getFdaAffirmation = (values, sequence, component) => {
+  const affirmations = Array.isArray(values?.fdaAffirmations)
+    ? values.fdaAffirmations
+    : [];
+  return affirmations.find(
+    (item) => Number(item?.sequence) === sequence,
+  )?.[component] || "";
+};
+
+const buildImportedMasterValues = (
+  documentType,
+  normalizedValues,
+) => {
+  const commonValues = {
+    "Description": normalizedValues.description,
+    "Unit of Measure": normalizedValues.unitOfMeasure,
+    "Unit Of Measure": normalizedValues.unitOfMeasure,
+    "Country of Origin": normalizedValues.countryOfOrigin,
+  };
+
+  if (documentType === "finishedProduct") {
+    const values = {
+      ...commonValues,
+      "Unit Weight Lb.": normalizedValues.unitNetWeight,
+      "Dutiable Value (USD)": getFirstNormalizedValue(
+        normalizedValues,
+        ["dutiableValueUsd", "materialCostUsd"],
+      ),
+      "Filler": normalizedValues.filler,
+      "Added Value (USD)": normalizedValues.addedValueUsd,
+      "USA Importation HTS Code": normalizedValues.importationHtsCode,
+      "USA Exportation Code": normalizedValues.exportationHtsCode,
+      "FDA Product Code": normalizedValues.fdaProductCode,
+      "FDA Storage": normalizedValues.fdaStorage,
+      "FDA Country of Origin": normalizedValues.fdaCountryOfOrigin,
+      "FDA Marker": normalizedValues.fdaMarker,
+      "USML (ITAR)": normalizedValues.usmlItar,
+    };
+
+    for (let sequence = 1; sequence <= 6; sequence += 1) {
+      values[`FDA Affirmation of Compliance Code ${sequence}`] =
+        getFdaAffirmation(normalizedValues, sequence, "code");
+      values[`FDA Affirmation of Compliance Qualifier ${sequence}`] =
+        getFdaAffirmation(normalizedValues, sequence, "qualifier");
+    }
+    return values;
+  }
+
+  if (documentType === "rawMaterial") {
+    return {
+      ...commonValues,
+      "Unit Weight Lb.": normalizedValues.unitNetWeight,
+      "Unit Cost (USD)": normalizedValues.unitCostUsd,
+      "Country of origin": normalizedValues.countryOfOrigin,
+      "Unit of measure": normalizedValues.unitOfMeasure,
+      "Importation HTS Code": normalizedValues.importationHtsCode,
+      "Exportation HTS Code": normalizedValues.exportationHtsCode,
+      "ECCN": normalizedValues.eccn,
+      "Filler": normalizedValues.filler,
+      "License Number (LCN)": normalizedValues.licenseNumber,
+      "License Exception": normalizedValues.licenseException,
+      "License Expiration date": formatImportedDate(
+        normalizedValues.licenseExpirationDate,
+      ),
+      "USML (ITAR)": normalizedValues.usmlItar,
+    };
+  }
+
+  if (documentType === "splScrap") {
+    return {
+      ...commonValues,
+      "Unit Value (USD)": getFirstNormalizedValue(
+        normalizedValues,
+        ["unitCostUsd", "materialCostUsd", "totalUnitCostUsd"],
+      ),
+      "Added Value (USD)": normalizedValues.addedValueUsd,
+      "Unit Net Weight": normalizedValues.unitNetWeight,
+      "ECCN": normalizedValues.eccn,
+      "License No.": normalizedValues.licenseNumber,
+      "License Exception": normalizedValues.licenseException,
+      "US IMP HTS Code": normalizedValues.importationHtsCode,
+      "US EXP HTS Code": normalizedValues.exportationHtsCode,
+      "Main Function": normalizedValues.mainFunction,
+    };
+  }
+
+  return {};
+};
+
+const enrichImportedRowsFromMasterFiles = async ({
+  user,
+  requestedSite,
+  documentType,
+  rows,
+}) => {
+  if (documentType === "billOfMaterials") {
+    const result = await enrichBillOfMaterialsRows({
+      user,
+      requestedSite,
+      rows,
+    });
+    const classifiedRows =
+      result.summary.matchedRows +
+      result.summary.missingRows +
+      result.summary.ambiguousRows;
+    result.summary.missingRows += Math.max(
+      0,
+      result.summary.totalRows - classifiedRows,
+    );
+    return result;
+  }
+
+  const masterTypesByDocument = {
+    finishedProduct: ["finishedProduct"],
+    rawMaterial: ["rawMaterial"],
+    splScrap: ["finishedProduct", "rawMaterial"],
+  };
+  const masterTypes = masterTypesByDocument[documentType];
+
+  if (!masterTypes) {
+    return {
+      rows: Array.isArray(rows) ? rows : [],
+      summary: null,
+    };
+  }
+
+  const site = resolveMasterLookupSite(user, requestedSite);
+  const safeRows = Array.isArray(rows)
+    ? rows.map((row) => ({ ...(row || {}) }))
+    : [];
+  const normalizeValue = (value) =>
+    String(value ?? "").trim().toUpperCase();
+  const partNumbers = [
+    ...new Set(
+      safeRows
+        .filter((row) => {
+          if (documentType !== "splScrap") return true;
+          return ["FG", "RM"].includes(
+            normalizeValue(row["Type of goods"]),
+          );
+        })
+        .map((row) => normalizeValue(row["Part Number"]))
+        .filter(Boolean),
+    ),
+  ];
+
+  const records = await masterFileRepository.findMasterRecordsForBatch({
+    partNumbers,
+    site,
+    masterTypes,
+  });
+  const recordsByPartAndType = new Map();
+
+  records.filter((record) => record.masterFileId).forEach((record) => {
+    const key = `${normalizeValue(record.partNumberNormalized)}||${record.masterType}`;
+    if (!recordsByPartAndType.has(key)) recordsByPartAndType.set(key, []);
+    recordsByPartAndType.get(key).push(record);
+  });
+
+  const selectLatestCandidate = (partNumber, masterType) => {
+    const candidates = recordsByPartAndType.get(
+      `${partNumber}||${masterType}`,
+    ) || [];
+    if (!candidates.length) return { status: "missing" };
+
+    candidates.sort((left, right) => {
+      const leftDate = new Date(
+        left.masterFileId?.updatedAt || left.masterFileId?.lastImportedAt || 0,
+      ).getTime();
+      const rightDate = new Date(
+        right.masterFileId?.updatedAt || right.masterFileId?.lastImportedAt || 0,
+      ).getTime();
+      return rightDate - leftDate || Number(left.sourceRow) - Number(right.sourceRow);
+    });
+
+    const newestFileId = String(candidates[0].masterFileId?._id || "");
+    const newestRecords = candidates.filter(
+      (record) => String(record.masterFileId?._id || "") === newestFileId,
+    );
+    const signatures = new Set(
+      newestRecords.map((record) => JSON.stringify(record.normalizedValues || {})),
+    );
+
+    if (signatures.size > 1) return { status: "ambiguous" };
+    return { status: "matched", record: newestRecords[0] };
+  };
+
+  let matchedRows = 0;
+  let missingRows = 0;
+  let ambiguousRows = 0;
+  let filledFieldCount = 0;
+
+  safeRows.forEach((row) => {
+    const partNumber = normalizeValue(row["Part Number"]);
+    if (!partNumber) {
+      missingRows += 1;
+      return;
+    }
+
+    let rowMasterTypes = masterTypes;
+
+    if (documentType === "splScrap") {
+      const typeOfGoods = normalizeValue(row["Type of goods"]);
+
+      if (typeOfGoods === "FG") {
+        rowMasterTypes = ["finishedProduct"];
+      } else if (typeOfGoods === "RM") {
+        rowMasterTypes = ["rawMaterial"];
+      } else {
+        // EQ y cualquier tipo no reconocido corresponden a partes
+        // que no deben consultarse en los archivos madre actuales.
+        missingRows += 1;
+        return;
+      }
+    }
+
+    const candidates = rowMasterTypes.map(
+      (masterType) => selectLatestCandidate(partNumber, masterType),
+    );
+    const hasAmbiguousCandidate = candidates.some(
+      (candidate) => candidate.status === "ambiguous",
+    );
+    const matches = candidates.filter(
+      (candidate) => candidate.status === "matched",
+    );
+
+    if (hasAmbiguousCandidate || matches.length > 1) {
+      ambiguousRows += 1;
+      return;
+    }
+    if (!matches.length) {
+      missingRows += 1;
+      return;
+    }
+
+    const valuesToFill = buildImportedMasterValues(
+      documentType,
+      matches[0].record.normalizedValues || {},
+    );
+    Object.entries(valuesToFill).forEach(([fieldName, value]) => {
+      if (
+        isEmptyImportedCell(row[fieldName]) &&
+        !isEmptyImportedCell(value)
+      ) {
+        row[fieldName] = value;
+        filledFieldCount += 1;
+      }
+    });
+    matchedRows += 1;
+  });
+
+  return {
+    site,
+    rows: safeRows,
+    summary: {
+      totalRows: safeRows.length,
+      matchedRows,
+      missingRows,
+      ambiguousRows,
+      filledFieldCount,
+    },
+  };
+};
 
 /**
  * Importa un archivo madre completo.
@@ -1391,6 +1676,8 @@ const assertMasterFileAccess = (
 const getMasterFileEditorData = async ({
   masterFileId,
   user,
+  page = 1,
+  pageSize = 1000,
 }) => {
   if (
     !masterFileId ||
@@ -1425,15 +1712,47 @@ const getMasterFileEditorData = async ({
     );
   }
 
-  const records =
+  const parsedPage = Number.parseInt(page, 10);
+  const parsedPageSize = Number.parseInt(pageSize, 10);
+  const safePage = Number.isInteger(parsedPage) && parsedPage > 0
+    ? parsedPage
+    : 1;
+  const safePageSize = Number.isInteger(parsedPageSize) && parsedPageSize > 0
+    ? Math.min(parsedPageSize, 1000)
+    : 1000;
+
+  const pageResult =
     await masterFileRepository
       .findActiveMasterRecordsForEditor(
-        masterFileId,
+        {
+          masterFileId,
+          page: safePage,
+          pageSize: safePageSize,
+        },
       );
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(pageResult.totalRecords / safePageSize),
+  );
+
+  if (safePage > totalPages) {
+    throw createMasterServiceError(
+      "MASTER_EDITOR_PAGE_INVALID",
+      "La página solicitada ya no existe.",
+      404,
+    );
+  }
 
   return {
     masterFile,
-    records,
+    records: pageResult.records,
+    pagination: {
+      page: safePage,
+      pageSize: safePageSize,
+      totalRecords: pageResult.totalRecords,
+      totalPages,
+    },
   };
 };
 
@@ -1487,17 +1806,10 @@ const updateMasterFileFromEditor =
       );
     }
 
-    if (rows.length === 0) {
-      throw createMasterServiceError(
-        "MASTER_EDITOR_ROWS_REQUIRED",
-        "El archivo madre debe conservar al menos una fila.",
-      );
-    }
-
-    if (rows.length > 100000) {
+    if (rows.length > 1000) {
       throw createMasterServiceError(
         "MASTER_EDITOR_ROWS_LIMIT",
-        "El archivo madre excede el límite de filas permitido.",
+        "Sólo se pueden guardar 1,000 filas por página.",
         413,
       );
     }
@@ -1671,6 +1983,17 @@ const updateMasterFileFromEditor =
             await masterFileRepository
               .findActiveMasterRecordsForUpdate(
                 masterFileId,
+                [
+                  ...receivedRecordIds,
+                  ...normalizedDeletedIds,
+                ],
+                session,
+              );
+
+          const currentRecordCount =
+            await masterFileRepository
+              .countActiveMasterRecords(
+                masterFileId,
                 session,
               );
 
@@ -1719,33 +2042,6 @@ const updateMasterFileFromEditor =
                 throw createMasterServiceError(
                   "MASTER_RECORD_NOT_FOUND",
                   "Una de las filas editadas ya no existe o pertenece a otro archivo.",
-                  409,
-                );
-              }
-            },
-          );
-
-          const receivedIdsSet =
-            new Set(
-              receivedRecordIds,
-            );
-
-          currentRecords.forEach(
-            (record) => {
-              const recordId =
-                String(record._id);
-
-              if (
-                !receivedIdsSet.has(
-                  recordId,
-                ) &&
-                !deletedIdsSet.has(
-                  recordId,
-                )
-              ) {
-                throw createMasterServiceError(
-                  "MASTER_RECORD_SET_INCOMPLETE",
-                  "El contenido enviado por el editor está incompleto. Recarga la página.",
                   409,
                 );
               }
@@ -1852,8 +2148,25 @@ const updateMasterFileFromEditor =
                 preparedRow.recordData,
             );
 
+          const insertedRecordCount =
+            preparedRows.filter(
+              (row) => !row.id,
+            ).length;
+          const nextRecordCount =
+            currentRecordCount +
+            insertedRecordCount -
+            normalizedDeletedIds.length;
+
+          if (nextRecordCount < 1) {
+            throw createMasterServiceError(
+              "MASTER_EDITOR_ROWS_REQUIRED",
+              "El archivo madre debe conservar al menos una fila.",
+            );
+          }
+
           applyEditorDuplicateWarnings(
             finalRecords,
+            masterFile.masterType,
           );
 
           const now =
@@ -1915,6 +2228,27 @@ const updateMasterFileFromEditor =
               },
             );
 
+          const sitesChanged =
+            JSON.stringify([...(masterFile.sites || [])].sort()) !==
+            JSON.stringify([...nextSites].sort());
+
+          if (sitesChanged) {
+            operations.unshift({
+              updateMany: {
+                filter: {
+                  masterFileId,
+                  isDeleted: false,
+                },
+                update: {
+                  $set: {
+                    sites: nextSites,
+                    updatedBy: editorUserId,
+                  },
+                },
+              },
+            });
+          }
+
           normalizedDeletedIds.forEach(
             (recordId) => {
               operations.push({
@@ -1951,19 +2285,11 @@ const updateMasterFileFromEditor =
             );
 
           const warningCount =
-            finalRecords.reduce(
-              (
-                totalWarnings,
-                record,
-              ) =>
-                totalWarnings +
-                (
-                  record
-                    .validationWarnings
-                    ?.length || 0
-                ),
-              0,
-            );
+            await masterFileRepository
+              .countActiveMasterRecordWarnings(
+                masterFileId,
+                session,
+              );
 
           const updatedMasterFile =
             await masterFileRepository
@@ -1976,7 +2302,7 @@ const updateMasterFileFromEditor =
                   sites:
                     nextSites,
                   recordCount:
-                    finalRecords.length,
+                    nextRecordCount,
                   warningCount,
                   updatedBy:
                     editorUserId,
@@ -1997,9 +2323,7 @@ const updateMasterFileFromEditor =
               updatedMasterFile,
 
             insertedRecordCount:
-              preparedRows.filter(
-                (row) => !row.id,
-              ).length,
+              insertedRecordCount,
 
             updatedRecordCount:
               preparedRows.filter(
@@ -2419,6 +2743,7 @@ module.exports = {
   listMasterFiles,
   lookupMasterRecordByPartNumber,
   enrichBillOfMaterialsRows,
+  enrichImportedRowsFromMasterFiles,
   getMasterFileEditorData,
   updateMasterFileFromEditor,
   downloadMasterFile,

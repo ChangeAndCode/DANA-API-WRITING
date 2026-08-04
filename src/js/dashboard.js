@@ -1,7 +1,9 @@
 // /src/js/dashboard.js
 import { displayMessage } from './common.js';
+import { formatSite } from './site-config.js';
 
 const userNameElement = document.getElementById('userName');
+const userSiteElement = document.getElementById('userSite');
 const apiAccessStatusElement = document.getElementById('apiAccessStatus');
 
 // Account Settings Tab Elements
@@ -22,6 +24,8 @@ const jwtTokenDisplay = document.getElementById('jwtTokenDisplay');
 const copyJwtBtn = document.getElementById('copyJwtBtn'); // New copy button
 
 const adminLink = document.getElementById('adminLink');
+const masterFilesLink = document.getElementById('masterFilesLink');
+const creationPanelLink = document.getElementById('creationPanelLink');
 
 // Tab functionality
 document.querySelectorAll('.tab-button').forEach((button) => {
@@ -46,6 +50,8 @@ async function fetchUserData() {
     if (response.ok) {
       const user = data.user;
       userNameElement.textContent = user.displayName || user.email;
+      userSiteElement.textContent =
+        formatSite(user.site) || 'Sin sede asignada';
       apiAccessStatusElement.textContent = user.isActive
         ? 'Activo'
         : 'Inactivo (contacta al admin)';
@@ -75,8 +81,12 @@ async function fetchUserData() {
 
       if (user.role === 'admin') {
         adminLink.classList.remove('hidden');
+        masterFilesLink.classList.remove('hidden');
+        creationPanelLink.classList.add('hidden');
       } else {
         adminLink.classList.add('hidden');
+        masterFilesLink.classList.add('hidden');
+        creationPanelLink.classList.remove('hidden');
       }
     } else {
       console.error('Error fetching user data:', data.message);

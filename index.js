@@ -98,6 +98,16 @@ setupPassportJwt(passport); // Set up JWT strategy
 // This is crucial for CSS, JS, and any other assets referenced by your HTML.
 // This middleware should be placed BEFORE any specific HTML routes below,
 // so that linked assets are found first.
+app.get(
+  ["/master-files.html", "/master-file-editor.html"],
+  authenticateRequest,
+  ensureAdmin,
+  (req, res) => {
+    const fileName = req.path.slice(1);
+    res.sendFile(path.join(__dirname, "dist", fileName));
+  },
+);
+
 app.use(express.static(path.join(__dirname, "dist")));
 
 // Define routes for your HTML entry points (pages).
@@ -125,11 +135,11 @@ app.get("/auth/dashboard", authenticateRequest, (req, res) => {
 });
 
 // Master files dashboard page - requires authentication
-app.get("/master-files", authenticateRequest, (req, res) => {
+app.get("/master-files", authenticateRequest, ensureAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "master-files.html"));
 });
 
-app.get("/master-file-editor",authenticateRequest,(req, res) => {
+app.get("/master-file-editor", authenticateRequest, ensureAdmin, (req, res) => {
   res.sendFile(path.join(__dirname,"dist","master-file-editor.html"));
 });
 

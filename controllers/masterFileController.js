@@ -355,6 +355,8 @@ const getMasterFileEditorData = async (req, res) => {
       await masterFileService.getMasterFileEditorData({
         masterFileId: req.params.masterFileId,
         user: req.user,
+        page: req.query.page,
+        pageSize: req.query.pageSize,
       });
 
     const masterFile = result.masterFile;
@@ -402,6 +404,7 @@ const getMasterFileEditorData = async (req, res) => {
       })),
 
       loadedRecordCount: result.records.length,
+      pagination: result.pagination,
     });
   } catch (error) {
     const statusCode =

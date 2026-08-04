@@ -2,6 +2,7 @@
 
 const MasterFile = require("../models/MasterFile");
 const MasterRecord = require("../models/MasterRecord");
+const mongoose = require("mongoose");
 
 /**
  * Agrega la sesión de MongoDB solamente cuando existe.
@@ -214,12 +215,21 @@ const findActiveMasterRecordsByMasterFileId =
 /**
  * Recupera los registros necesarios para el editor.
  */
-const findActiveMasterRecordsForEditor = async (masterFileId) => {
-  return MasterRecord.find({
+const findActiveMasterRecordsForEditor = async ({
+  masterFileId,
+  page,
+  pageSize,
+}) => {
+  const filter = {
     masterFileId,
     isDeleted: false,
-  })
+  };
+
+  const [records, totalRecords] = await Promise.all([
+    MasterRecord.find(filter)
     .sort({ sourceRow: 1 })
+    .skip((page - 1) * pageSize)
+    .limit(pageSize)
     .select([
       "_id",
       "partNumber",
@@ -229,7 +239,11 @@ const findActiveMasterRecordsForEditor = async (masterFileId) => {
       "createdAt",
       "updatedAt",
     ].join(" "))
-    .lean();
+    .lean(),
+    MasterRecord.countDocuments(filter),
+  ]);
+
+  return { records, totalRecords };
 };
 
 /**
@@ -374,6 +388,59 @@ const findBomMasterRecordsForBatch =
       .lean();
   };
 
+const findMasterRecordsForBatch = async ({
+  partNumbers,
+  site,
+  masterTypes,
+}) => {
+  const safePartNumbers = Array.isArray(partNumbers)
+    ? [...new Set(partNumbers.filter(Boolean))]
+    : [];
+  const safeMasterTypes = Array.isArray(masterTypes)
+    ? [...new Set(masterTypes.filter(Boolean))]
+    : [];
+
+  if (!safePartNumbers.length || !safeMasterTypes.length) {
+    return [];
+  }
+
+  return MasterRecord.find({
+    sites: site,
+    masterType: { $in: safeMasterTypes },
+    partNumberNormalized: { $in: safePartNumbers },
+    isDeleted: false,
+  })
+    .sort({ sourceRow: 1 })
+    .select([
+      "_id",
+      "masterFileId",
+      "masterType",
+      "partNumber",
+      "partNumberNormalized",
+      "sourceRow",
+      "normalizedValues",
+      "validationWarnings",
+    ].join(" "))
+    .populate({
+      path: "masterFileId",
+      match: {
+        status: "ready",
+        sites: site,
+        masterType: { $in: safeMasterTypes },
+      },
+      select: [
+        "name",
+        "masterType",
+        "sites",
+        "status",
+        "revision",
+        "updatedAt",
+        "lastImportedAt",
+      ].join(" "),
+    })
+    .lean();
+};
+
 /**
  * Recupera los identificadores y posiciones
  * de los registros que pueden modificarse.
@@ -381,12 +448,16 @@ const findBomMasterRecordsForBatch =
 const findActiveMasterRecordsForUpdate =
   async (
     masterFileId,
+    recordIds,
     session = null,
   ) => {
     const query =
       MasterRecord.find({
         masterFileId,
         isDeleted: false,
+        _id: {
+          $in: recordIds,
+        },
       })
         .sort({
           sourceRow: 1,
@@ -405,6 +476,53 @@ const findActiveMasterRecordsForUpdate =
 
     return query;
   };
+
+const countActiveMasterRecords = async (
+  masterFileId,
+  session = null,
+) => {
+  const query = MasterRecord.countDocuments({
+    masterFileId,
+    isDeleted: false,
+  });
+
+  if (session) query.session(session);
+  return query;
+};
+
+const countActiveMasterRecordWarnings = async (
+  masterFileId,
+  session = null,
+) => {
+  const aggregate = MasterRecord.aggregate([
+    {
+      $match: {
+        masterFileId:
+          new mongoose.Types.ObjectId(masterFileId),
+        isDeleted: false,
+      },
+    },
+    {
+      $project: {
+        warningCount: {
+          $size: {
+            $ifNull: ["$validationWarnings", []],
+          },
+        },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$warningCount" },
+      },
+    },
+  ]);
+
+  if (session) aggregate.session(session);
+  const [result] = await aggregate;
+  return result?.total || 0;
+};
 
 /**
  * Obtiene la posición más alta utilizada,
@@ -494,7 +612,10 @@ module.exports = {
   findActiveMasterRecordsForEditor,
   findMasterRecordsByPartNumber,
   findBomMasterRecordsForBatch,
+  findMasterRecordsForBatch,
   findActiveMasterRecordsForUpdate,
+  countActiveMasterRecords,
+  countActiveMasterRecordWarnings,
   findHighestMasterRecordSourceRow,
   findActiveMasterRecordsForCopy,
   deleteMasterRecordsByMasterFileId,

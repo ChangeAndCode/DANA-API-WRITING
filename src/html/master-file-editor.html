@@ -21,9 +21,6 @@
       <div>
         <h1>Editar archivo madre</h1>
 
-        <p>
-          Consulta y modifica la información interna del archivo madre.
-        </p>
       </div>
     </header>
 
@@ -94,7 +91,7 @@
 
       <p
         id="masterEditorScopeMessage"
-        class="master-editor-scope"
+        class="master-editor-scope hidden"
       ></p>
 
       <div class="master-editor-toolbar">
@@ -131,6 +128,46 @@
           almacenados en MongoDB.
         </p>
       </div>
+
+      <nav
+        id="masterEditorPagination"
+        class="master-editor-pagination hidden"
+        aria-label="Paginación del archivo madre"
+      >
+        <button
+          type="button"
+          id="masterEditorFirstPageButton"
+          aria-label="Primera página"
+          title="Primera página"
+        >
+          &laquo;
+        </button>
+        <button
+          type="button"
+          id="masterEditorPreviousPageButton"
+          aria-label="Página anterior"
+          title="Página anterior"
+        >
+          &lsaquo;
+        </button>
+        <span id="masterEditorPageSummary" aria-live="polite"></span>
+        <button
+          type="button"
+          id="masterEditorNextPageButton"
+          aria-label="Página siguiente"
+          title="Página siguiente"
+        >
+          &rsaquo;
+        </button>
+        <button
+          type="button"
+          id="masterEditorLastPageButton"
+          aria-label="Última página"
+          title="Última página"
+        >
+          &raquo;
+        </button>
+      </nav>
 
       <div class="master-editor-actions">
         <a

@@ -154,7 +154,7 @@ const findSplScrapHeaderRow = (worksheet) => {
     const nonEmpty = headers.filter((h) => h).length;
     const hasPart = headers.some((h) => /part number/i.test(h));
     const score = (hasPart ? 2 : 0) + nonEmpty;
-    if (score > bestScore && nonEmpty >= 3) {
+    if (score > bestScore && hasPart && nonEmpty >= 1) {
       bestScore = score;
       bestRow = { index: r, headers };
       if (hasPart && nonEmpty >= 8) break; // good enough

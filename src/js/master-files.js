@@ -161,15 +161,6 @@ const MASTER_DELETE_ICON = `
   </svg>
 `;
 
-const formatSite = (site) => {
-  const siteLabels = {
-    gaiim: "GAIIM",
-    p1a: "P1A",
-  };
-
-  return siteLabels[site] || site;
-};
-
 const showMessage = (
   message,
   type = "",
@@ -706,21 +697,17 @@ const getFileExtension = (fileName) => {
   );
 };
 
-const validateSelectedFile = (
-  file,
-) => {
+const validateSelectedFile = (file) => {
   if (!file) {
     return {
       isValid: false,
-      message:
-        "Selecciona un archivo madre.",
+      message: "Selecciona un archivo madre.",
     };
   }
 
-  const extension =
-    getFileExtension(
-      file.name,
-    );
+  const extension = getFileExtension(
+    file.name,
+  );
 
   if (
     extension !== ".xlsx" &&
@@ -1306,3 +1293,4 @@ document.addEventListener(
     }
   },
 );
+import { formatSite } from "./site-config.js";

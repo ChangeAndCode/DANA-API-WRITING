@@ -10,8 +10,41 @@ const adminFileNameInput = document.getElementById("adminFileName");
 const fileCreationSiteGroup = document.getElementById("fileCreationSiteGroup");
 const fileCreationSite = document.getElementById("fileCreationSite");
 const fileCreationSiteHelp = document.getElementById("fileCreationSiteHelp");
+const fileCreationPagination = document.getElementById("fileCreationPagination");
+const fileCreationPageSummary = document.getElementById("fileCreationPageSummary");
+const fileCreationFirstPage = document.getElementById("fileCreationFirstPage");
+const fileCreationPreviousPage = document.getElementById("fileCreationPreviousPage");
+const fileCreationNextPage = document.getElementById("fileCreationNextPage");
+const fileCreationLastPage = document.getElementById("fileCreationLastPage");
 let editingFileId = "";
 let currentFileCreationUser = null;
+
+const FILE_CREATION_PAGE_SIZE = 1000;
+const fileCreationPageState = {
+  finishedProduct: { rows: null, page: 1, renderedCount: 0 },
+  rawMaterial: { rows: null, page: 1, renderedCount: 0 },
+  billOfMaterials: { rows: null, page: 1, renderedCount: 0 },
+  splScrap: { rows: null, page: 1, renderedCount: 0 },
+};
+let renderingCreationPage = false;
+let activeCreationDocumentType = "";
+
+function canAddCreationRow(documentType) {
+  if (renderingCreationPage) return true;
+  const state = fileCreationPageState[documentType];
+  if (!state || !Array.isArray(state.rows)) return true;
+  const totalPages = Math.max(
+    1,
+    Math.ceil(state.rows.length / FILE_CREATION_PAGE_SIZE),
+  );
+  if (state.page < totalPages) {
+    renderErrorList([
+      { message: "Para agregar filas, navega primero a la última página." },
+    ]);
+    return false;
+  }
+  return true;
+}
 
 const masterLookupTimers = new WeakMap();
 const masterLookupControllers = new WeakMap();
@@ -1261,7 +1294,7 @@ function getTableBodyForDocumentType(documentType) {
   if (documentType === "finishedProduct") return fpBody;
   if (documentType === "rawMaterial") return rmBody;
   if (documentType === "billOfMaterials") return bmBody;
-  if (documentType === "splScrap") return splBody;  
+  if (documentType === "splScrap") return splBody;
   return null;
 }
 
@@ -2250,6 +2283,7 @@ function buildRawMaterialTable() {
 
 function addFinishedProductRow(values = {}) {
   if (!fpBody) return;
+  if (!canAddCreationRow("finishedProduct")) return;
   const row = document.createElement("tr");
 
   finishedProductColumns.forEach((col) => {
@@ -2396,16 +2430,120 @@ function addFinishedProductRow(values = {}) {
   updateTableScroll(fpBody);
 }
 
+function getCreationPaginationConfig(documentType) {
+  if (documentType === "finishedProduct") {
+    return { tbody: fpBody, columns: finishedProductColumns, addRow: addFinishedProductRow };
+  }
+  if (documentType === "rawMaterial") {
+    return { tbody: rmBody, columns: rawMaterialColumns, addRow: addRawMaterialRow };
+  }
+  if (documentType === "billOfMaterials") {
+    return { tbody: bmBody, columns: billOfMaterialsColumns, addRow: addBillOfMaterialsRow };
+  }
+  if (documentType === "splScrap") {
+    return { tbody: splBody, columns: splScrapColumns, addRow: addSplScrapRow };
+  }
+  return null;
+}
+
+function readVisibleCreationRows(documentType) {
+  const config = getCreationPaginationConfig(documentType);
+  if (!config?.tbody) return [];
+  const meta = documentType === "splScrap" ? collectSplScrapMeta() : null;
+
+  return Array.from(config.tbody.querySelectorAll("tr")).map((tr) => {
+    if (documentType === "splScrap") {
+      updateSplScrapRowComputedFields(tr);
+    }
+    const editors = tr.querySelectorAll("input, select");
+    const row = meta ? { ...meta } : {};
+    config.columns.forEach((column, index) => {
+      row[column.label] = editors[index]?.value || "";
+    });
+    return row;
+  });
+}
+
+function persistVisibleCreationPage(documentType) {
+  if (renderingCreationPage) return;
+  const state = fileCreationPageState[documentType];
+  if (!state || !Array.isArray(state.rows)) return;
+  const startIndex = (state.page - 1) * FILE_CREATION_PAGE_SIZE;
+  const visibleRows = readVisibleCreationRows(documentType);
+  state.rows.splice(startIndex, state.renderedCount, ...visibleRows);
+  state.renderedCount = visibleRows.length;
+}
+
+function renderCreationPagination(documentType) {
+  const state = fileCreationPageState[documentType];
+  if (!state || !Array.isArray(state.rows)) {
+    fileCreationPagination?.classList.add("hidden");
+    return;
+  }
+
+  const totalRecords = state.rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRecords / FILE_CREATION_PAGE_SIZE));
+  state.page = Math.min(Math.max(state.page, 1), totalPages);
+  const firstRecord = totalRecords ? ((state.page - 1) * FILE_CREATION_PAGE_SIZE) + 1 : 0;
+  const lastRecord = Math.min(state.page * FILE_CREATION_PAGE_SIZE, totalRecords);
+
+  fileCreationPageSummary.textContent =
+    `Página ${state.page} de ${totalPages} · Registros ${firstRecord}-${lastRecord} de ${totalRecords}`;
+  fileCreationFirstPage.disabled = state.page <= 1;
+  fileCreationPreviousPage.disabled = state.page <= 1;
+  fileCreationNextPage.disabled = state.page >= totalPages;
+  fileCreationLastPage.disabled = state.page >= totalPages;
+  fileCreationPagination.classList.remove("hidden");
+}
+
+function renderCreationPage(documentType) {
+  const state = fileCreationPageState[documentType];
+  const config = getCreationPaginationConfig(documentType);
+  if (!state || !Array.isArray(state.rows) || !config?.tbody) return;
+
+  const totalPages = Math.max(1, Math.ceil(state.rows.length / FILE_CREATION_PAGE_SIZE));
+  state.page = Math.min(Math.max(state.page, 1), totalPages);
+  const startIndex = (state.page - 1) * FILE_CREATION_PAGE_SIZE;
+  const pageRows = state.rows.slice(startIndex, startIndex + FILE_CREATION_PAGE_SIZE);
+
+  renderingCreationPage = true;
+  config.tbody.innerHTML = "";
+  (pageRows.length ? pageRows : [{}]).forEach((row) => config.addRow(row));
+  renderingCreationPage = false;
+  state.renderedCount = pageRows.length ? pageRows.length : 1;
+
+  if (documentType === "splScrap") applySplScrapShipmentMode();
+  updateTableScroll(config.tbody);
+  renderCreationPagination(documentType);
+}
+
+function initializeCreationPagination(documentType, rows) {
+  const list = Array.isArray(rows) && rows.length ? [...rows] : [{}];
+  fileCreationPageState[documentType] = {
+    rows: list,
+    page: 1,
+    renderedCount: 0,
+  };
+  renderCreationPage(documentType);
+}
+
+function changeCreationPage(targetPage) {
+  const documentType = fileType?.value;
+  const state = fileCreationPageState[documentType];
+  if (!state || !Array.isArray(state.rows)) return;
+  persistVisibleCreationPage(documentType);
+  const totalPages = Math.max(1, Math.ceil(state.rows.length / FILE_CREATION_PAGE_SIZE));
+  state.page = Math.min(Math.max(targetPage, 1), totalPages);
+  renderCreationPage(documentType);
+}
+
 function setFinishedProductRows(rows = []) {
   if (!fpBody) return;
   if (!fpInitialized) {
     buildFinishedProductTable();
     fpInitialized = true;
   }
-  fpBody.innerHTML = "";
-  const list = Array.isArray(rows) && rows.length ? rows : [{}];
-  list.forEach((row) => addFinishedProductRow(row));
-  updateTableScroll(fpBody);
+  initializeCreationPagination("finishedProduct", rows);
 }
 
 function setRawMaterialRows(rows = []) {
@@ -2414,10 +2552,7 @@ function setRawMaterialRows(rows = []) {
     buildRawMaterialTable();
     rmInitialized = true;
   }
-  rmBody.innerHTML = "";
-  const list = Array.isArray(rows) && rows.length ? rows : [{}];
-  list.forEach((row) => addRawMaterialRow(row));
-  updateTableScroll(rmBody);
+  initializeCreationPagination("rawMaterial", rows);
 }
 
 function setBillOfMaterialsRows(rows = []) {
@@ -2426,10 +2561,7 @@ function setBillOfMaterialsRows(rows = []) {
     buildBillOfMaterialsTable();
     bmInitialized = true;
   }
-  bmBody.innerHTML = "";
-  const list = Array.isArray(rows) && rows.length ? rows : [{}];
-  list.forEach((row) => addBillOfMaterialsRow(row));
-  updateTableScroll(bmBody);
+  initializeCreationPagination("billOfMaterials", rows);
 }
 
 function setSplScrapRows(rows = []) {
@@ -2455,10 +2587,7 @@ function setSplScrapRows(rows = []) {
     input.value = value !== undefined && value !== null ? String(value) : "";
   });
 
-  splBody.innerHTML = "";
-  list.forEach((row) => addSplScrapRow(row));
-  applySplScrapShipmentMode();
-  updateTableScroll(splBody);
+  initializeCreationPagination("splScrap", list);
 }
 // Utilidad para scroll interno en tablas si hay más de 6 filas
 function updateTableScroll(tbody) {
@@ -2476,6 +2605,7 @@ function updateTableScroll(tbody) {
 
 function addRawMaterialRow(values = {}) {
   if (!rmBody) return;
+  if (!canAddCreationRow("rawMaterial")) return;
   const row = document.createElement("tr");
 
   rawMaterialColumns.forEach((col) => {
@@ -2644,6 +2774,7 @@ function buildBillOfMaterialsTable() {
 
 function addBillOfMaterialsRow(values = {}) {
   if (!bmBody) return;
+  if (!canAddCreationRow("billOfMaterials")) return;
   const row = document.createElement("tr");
 
   billOfMaterialsColumns.forEach((col) => {
@@ -3164,6 +3295,7 @@ function getSplScrapRowEditors(rowElement) {
 
 function addSplScrapRow(values = {}) {
   if (!splBody) return;
+  if (!canAddCreationRow("splScrap")) return;
   const row = document.createElement("tr");
 
   splScrapColumns.forEach((col) => {
@@ -3338,6 +3470,10 @@ function addSplScrapRow(values = {}) {
 }
 
 function showFormat(type) {
+  if (activeCreationDocumentType) {
+    persistVisibleCreationPage(activeCreationDocumentType);
+  }
+  activeCreationDocumentType = type;
   resetValidationResult();
   sections.forEach((s) => s.classList.add("hidden"));
   const id = map[type];
@@ -3374,6 +3510,7 @@ function showFormat(type) {
     buildSplScrapTable();
     splInitialized = true;
   }
+  renderCreationPagination(type);
 }
 
 if (fpAddRowBtn) {
@@ -3392,6 +3529,26 @@ if (splAddRowBtn) {
   splAddRowBtn.addEventListener("click", addSplScrapRow);
 }
 
+if (fileCreationFirstPage) {
+  fileCreationFirstPage.addEventListener("click", () => changeCreationPage(1));
+  fileCreationPreviousPage.addEventListener("click", () => {
+    const state = fileCreationPageState[fileType?.value];
+    changeCreationPage((state?.page || 1) - 1);
+  });
+  fileCreationNextPage.addEventListener("click", () => {
+    const state = fileCreationPageState[fileType?.value];
+    changeCreationPage((state?.page || 1) + 1);
+  });
+  fileCreationLastPage.addEventListener("click", () => {
+    const state = fileCreationPageState[fileType?.value];
+    const totalPages = Math.max(
+      1,
+      Math.ceil((state?.rows?.length || 0) / FILE_CREATION_PAGE_SIZE),
+    );
+    changeCreationPage(totalPages);
+  });
+}
+
 function renderErrorList(errors, title = "Errores") {
   if (!validationResult) return;
   validationResult.classList.remove("hidden", "success", "error", "warning");
@@ -3408,6 +3565,31 @@ function renderErrorList(errors, title = "Errores") {
     ul.appendChild(li);
   });
   validationResult.append(h4, ul);
+}
+
+function appendMasterLookupSummary(summary) {
+  if (!validationResult || !summary) return;
+
+  const section = document.createElement("div");
+  section.className = "master-enrichment-summary";
+
+  const title = document.createElement("h4");
+  title.textContent = "Enriquecimiento desde archivos madre";
+
+  const list = document.createElement("ul");
+  [
+    ["Encontrados", summary.matchedRows],
+    ["No encontrados", summary.missingRows],
+    ["Ambiguos", summary.ambiguousRows],
+    ["Celdas completadas", summary.filledFieldCount],
+  ].forEach(([label, value]) => {
+    const item = document.createElement("li");
+    item.textContent = `${label}: ${Number(value) || 0}`;
+    list.appendChild(item);
+  });
+
+  section.append(title, list);
+  validationResult.appendChild(section);
 }
 
 function resetValidationResult() {
@@ -3440,11 +3622,7 @@ function renderImportSelectionNotice(fileName, documentType) {
   const p2 = document.createElement("p");
   p2.textContent = `Tipo destino: ${getDocumentTypeLabel(documentType)}`;
 
-  const p3 = document.createElement("p");
-  p3.textContent =
-    "Siguiente paso: enviarlo al backend para cargarlo dentro del editor.";
-
-  validationResult.append(h4, p1, p2, p3);
+  validationResult.append(h4, p1, p2);
 }
 
 function applyImportedRowsToEditor(documentType, rows = []) {
@@ -3496,7 +3674,29 @@ async function startManualImport() {
     ]);
     importFileInput.value = "";
     return;
-  }  
+  }
+
+  const selectedTypeOfGoods =
+    fileType.value === "splScrap"
+      ? String(
+          splMetaInputs["Type of goods"]?.value || "",
+        ).trim().toUpperCase()
+      : "";
+
+  if (
+    fileType.value === "splScrap" &&
+    !["FG", "RM", "EQ"].includes(selectedTypeOfGoods)
+  ) {
+    renderErrorList([
+      {
+        message:
+          "Selecciona Type of goods (FG, RM o EQ) antes de cargar el archivo.",
+      },
+    ]);
+    splMetaInputs["Type of goods"]?.focus();
+    importFileInput.value = "";
+    return;
+  }
   const selectedSite =
     getSelectedFileCreationSite();
   if (!selectedSite) {
@@ -3533,6 +3733,12 @@ async function startManualImport() {
       "site",
       selectedSite,
     );
+    if (selectedTypeOfGoods) {
+      formData.append(
+        "typeOfGoods",
+        selectedTypeOfGoods,
+      );
+    }
 
     const response = await fetch("/api/files/import-manual", {
       method: "POST",
@@ -3567,6 +3773,7 @@ async function startManualImport() {
         data.errors || [{ message: "El archivo se cargo con observaciones." }],
         "Archivo cargado con observaciones",
       );
+      appendMasterLookupSummary(data.masterLookupSummary);
     } else if (validationResult) {
       validationResult.classList.remove(
         "hidden",
@@ -3591,6 +3798,7 @@ async function startManualImport() {
         "Los datos ya estan en el editor. Revisa la informacion y luego crea el archivo.";
 
       validationResult.append(h4, p1, p2, p3);
+      appendMasterLookupSummary(data.masterLookupSummary);
     }
   } catch (error) {
     renderErrorList([
@@ -3712,6 +3920,12 @@ function renderWarning(errors, jobId) {
 
 function collectFinishedProductRows() {
   if (!fpBody) return [];
+  if (Array.isArray(fileCreationPageState.finishedProduct.rows)) {
+    persistVisibleCreationPage("finishedProduct");
+    return fileCreationPageState.finishedProduct.rows.filter((row) =>
+      Object.values(row).some((value) => String(value ?? "").trim() !== ""),
+    );
+  }
   const rows = [];
   fpBody.querySelectorAll("tr").forEach((tr) => {
     const inputs = tr.querySelectorAll("input");
@@ -3728,6 +3942,12 @@ function collectFinishedProductRows() {
 
 function collectRawMaterialRows() {
   if (!rmBody) return [];
+  if (Array.isArray(fileCreationPageState.rawMaterial.rows)) {
+    persistVisibleCreationPage("rawMaterial");
+    return fileCreationPageState.rawMaterial.rows.filter((row) =>
+      Object.values(row).some((value) => String(value ?? "").trim() !== ""),
+    );
+  }
   const rows = [];
   rmBody.querySelectorAll("tr").forEach((tr) => {
     const inputs = tr.querySelectorAll("input");
@@ -3744,6 +3964,12 @@ function collectRawMaterialRows() {
 
 function collectBillOfMaterialsRows() {
   if (!bmBody) return [];
+  if (Array.isArray(fileCreationPageState.billOfMaterials.rows)) {
+    persistVisibleCreationPage("billOfMaterials");
+    return fileCreationPageState.billOfMaterials.rows.filter((row) =>
+      Object.values(row).some((value) => String(value ?? "").trim() !== ""),
+    );
+  }
   const rows = [];
   bmBody.querySelectorAll("tr").forEach((tr) => {
     const inputs = tr.querySelectorAll("input");
@@ -3770,6 +3996,16 @@ function collectSplScrapMeta() {
 function collectSplScrapRows() {
   if (!splBody) return [];
   const meta = collectSplScrapMeta();
+  if (Array.isArray(fileCreationPageState.splScrap.rows)) {
+    persistVisibleCreationPage("splScrap");
+    return fileCreationPageState.splScrap.rows
+      .map((row) => ({ ...row, ...meta }))
+      .filter((row) =>
+        splScrapColumns.some((column) =>
+          String(row[column.label] ?? "").trim() !== "",
+        ),
+      );
+  }
   const isScrap = getSplScrapIsScrapMode();
   const rows = [];
   splBody.querySelectorAll("tr").forEach((tr) => {

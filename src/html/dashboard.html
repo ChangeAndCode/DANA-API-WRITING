@@ -30,6 +30,9 @@
           Bienvenido, <strong id="userName">Cargando...</strong>.
         </p>
         <p>
+          Sede: <strong id="userSite">Cargando...</strong>
+        </p>
+        <p>
           Estado de Acceso API:
           <strong id="apiAccessStatus">Cargando...</strong>
         </p>
@@ -107,10 +110,11 @@
     </div>
 
     <div class="dashboard-nav">
-      <a href="/file-creation" class="api-link">Panel de creación</a>
+      <a href="/file-creation" id="creationPanelLink" class="api-link hidden">Panel de creación</a>
+      <a href="/file-admin.html" class="api-link">Administrar Archivos</a>
       <!-- <a href="/file-conversion" class="api-link">Panel de exportación</a> -->
       <a href="/admin-dashboard" id="adminLink" class="admin-link hidden">Panel de Administración</a>
-      <a href="/master-files" class="api-link">
+      <a href="/master-files" id="masterFilesLink" class="api-link hidden">
         Archivos Madre
       </a>
       <button onclick="window.location.href='/auth/logout'" class="logout-btn">
