@@ -194,9 +194,25 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
     sourceUnit: "g",
   },
 
+  unitweightlb: {
+    target: "unitNetWeight",
+    transform: "pounds",
+    sourceUnit: "lb",
+  },
+
   materialcostusd: {
     target: "materialCostUsd",
     transform: "number",
+  },
+
+  dutiablevalue: {
+    target: "dutiableValueUsd",
+    transform: "number",
+  },
+
+  filler: {
+    target: "filler",
+    transform: "text",
   },
 
   addedvalueusd: {
@@ -697,6 +713,7 @@ const MASTER_FILE_REGISTRY = Object.freeze({
 
     sheetNames: [
       "FG_Catalog",
+      "FS E",
     ],
 
     ignoredSheetNames: [
@@ -730,6 +747,7 @@ const MASTER_FILE_REGISTRY = Object.freeze({
 
     sheetNames: [
       "RawMatlCat",
+      "RM E",
     ],
 
     ignoredSheetNames: [
@@ -764,6 +782,7 @@ const MASTER_FILE_REGISTRY = Object.freeze({
 
     sheetNames: [
       "BOMs",
+      "BOM E",
     ],
 
     ignoredSheetNames: [
@@ -802,13 +821,34 @@ const MASTER_FILE_REGISTRY = Object.freeze({
 /**
  * Busca la configuración por tipo interno.
  */
-const getMasterFileConfig = (masterType) => {
+const getMasterFileConfig = (masterType, sourceSheetName = "") => {
   const config = MASTER_FILE_REGISTRY[masterType];
 
   if (!config) {
     throw new Error(
       `Tipo de archivo madre desconocido: ${masterType}`,
     );
+  }
+
+  const normalizedSheetName = String(sourceSheetName || "")
+    .trim()
+    .toLowerCase();
+
+  if (["fs e", "rm e"].includes(normalizedSheetName)) {
+    return {
+      ...config,
+      headerRow: 1,
+    };
+  }
+
+  if (normalizedSheetName === "bom e") {
+    return {
+      ...config,
+      headerRow: 1,
+      requiredMappedFields: config.requiredMappedFields.filter(
+        (field) => field !== "componentClassification",
+      ),
+    };
   }
 
   return config;

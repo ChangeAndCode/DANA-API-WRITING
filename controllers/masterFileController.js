@@ -1,6 +1,9 @@
 // controllers/masterFileController.js
 
 const path = require("path");
+const crypto = require("crypto");
+const fs = require("fs");
+const fsPromises = require("fs/promises");
 const multer = require("multer");
 
 const masterFileService = require(
@@ -8,7 +11,7 @@ const masterFileService = require(
 );
 
 const {
-  convertXlsBufferToXlsx,
+  convertXlsToXlsx,
 } = require(
   "../utils/xlsConverter",
 );
@@ -33,6 +36,23 @@ const VALID_MASTER_EXTENSIONS = new Set([
   ".xlsm",
   ".xls",
 ]);
+
+const masterUploadTempDir = path.resolve(
+  process.env.MASTER_IMPORT_TEMP_DIR ||
+    path.join(__dirname, "..", "temp_master_imports"),
+);
+
+fs.mkdirSync(masterUploadTempDir, { recursive: true });
+
+let activeMasterImports = 0;
+const configuredImportConcurrency = Number.parseInt(
+  process.env.MASTER_IMPORT_CONCURRENCY,
+  10,
+);
+const masterImportConcurrency = Number.isInteger(configuredImportConcurrency) &&
+  configuredImportConcurrency > 0
+  ? configuredImportConcurrency
+  : 1;
 
 /**
  * Verifica la extensión antes de cargar el archivo
@@ -68,7 +88,13 @@ const masterFileFilter = (
  * El parser recibirá req.file.buffer.
  */
 const multerUpload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: masterUploadTempDir,
+    filename: (_req, file, callback) => {
+      const extension = path.extname(file.originalname || "").toLowerCase();
+      callback(null, `${crypto.randomUUID()}${extension}`);
+    },
+  }),
 
   fileFilter: masterFileFilter,
 
@@ -758,7 +784,7 @@ const importMasterFile = async (
   req,
   res,
 ) => {
-  if (!req.file || !req.file.buffer) {
+  if (!req.file || !req.file.path) {
     return res.status(400).json({
       code: "MASTER_FILE_REQUIRED",
 
@@ -766,6 +792,20 @@ const importMasterFile = async (
         "Debes seleccionar un archivo madre.",
     });
   }
+
+  let importPath = req.file.path;
+  let convertedPath = "";
+
+  if (activeMasterImports >= masterImportConcurrency) {
+    await fsPromises.unlink(req.file.path).catch(() => {});
+    return res.status(429).json({
+      code: "MASTER_IMPORT_BUSY",
+      message:
+        "Ya existe una importación de archivo madre en proceso. Intenta nuevamente cuando termine.",
+    });
+  }
+
+  activeMasterImports += 1;
 
   try {
     const originalFileName =
@@ -779,22 +819,17 @@ const importMasterFile = async (
         )
         .toLowerCase();
 
-    let importBuffer =
-      req.file.buffer;
-
     if (
       originalExtension === ".xls"
     ) {
-      importBuffer =
-        await convertXlsBufferToXlsx(
-          req.file.buffer,
-        );
+      convertedPath = await convertXlsToXlsx(req.file.path);
+      importPath = convertedPath;
     }
     const result =
       await masterFileService
-        .importMasterFile({
-          fileBuffer:
-            importBuffer,
+        .importMasterFileFromPath({
+          filePath:
+            importPath,
           originalFileName,
           name:
             req.body.name,
@@ -864,6 +899,13 @@ const importMasterFile = async (
           ? error.message
           : "Error interno al importar el archivo madre.",
     });
+  } finally {
+    activeMasterImports = Math.max(0, activeMasterImports - 1);
+    await fsPromises.unlink(req.file.path).catch(() => {});
+
+    if (convertedPath && convertedPath !== req.file.path) {
+      await fsPromises.unlink(convertedPath).catch(() => {});
+    }
   }
 };
 

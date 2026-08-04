@@ -1416,7 +1416,7 @@ const parseMasterFileBuffer = async (
     );
   }
 
-  const config = getMasterFileConfig(
+  let config = getMasterFileConfig(
     detectedMasterType,
   );
 
@@ -1431,6 +1431,11 @@ const parseMasterFileBuffer = async (
       "No se encontró la hoja principal del archivo madre.",
     );
   }
+
+  config = getMasterFileConfig(
+    detectedMasterType,
+    worksheet.name,
+  );
 
   const headers = buildHeaders(
     worksheet,
@@ -1569,4 +1574,11 @@ module.exports = {
   buildMasterRecordFromEditorRow,
   normalizePartNumber,
   isTemplatePartNumber,
+  createParserError,
+  getCellValue,
+  toCleanText,
+  resolveHeaderRule,
+  validateRequiredHeaders,
+  findPartNumberHeader,
+  parseDataRow,
 };

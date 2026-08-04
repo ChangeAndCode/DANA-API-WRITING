@@ -9,6 +9,9 @@ const {
   buildMasterRecordFromEditorRow,
 } = require("../utils/masterFileParser");
 const {
+  parseMasterFileStream,
+} = require("../utils/masterFileStreamParser");
+const {
   createMasterFileWorkbook,
 } = require(
   "../utils/masterFileExporter"
@@ -1595,6 +1598,171 @@ const importMasterFile = async ({
 };
 
 /**
+ * Importa un archivo madre desde disco utilizando memoria acotada. El parser
+ * entrega lotes pequeños y cada lote se libera después de insertarse.
+ */
+const importMasterFileFromPath = async ({
+  filePath,
+  originalFileName,
+  name,
+  expectedMasterType,
+  sites,
+  user,
+}) => {
+  const adminUserId = getAdminUserId(user);
+  const normalizedSites = normalizeMasterSites(sites);
+  const safeOriginalFileName = path.basename(
+    String(originalFileName || "").trim(),
+  );
+
+  if (!safeOriginalFileName) {
+    throw createMasterServiceError(
+      "MASTER_FILE_NAME_REQUIRED",
+      "El archivo madre debe tener un nombre.",
+    );
+  }
+
+  const masterFileName = String(name || "").trim() || safeOriginalFileName;
+  const configuredBatchSize = Number.parseInt(
+    process.env.MASTER_IMPORT_BATCH_SIZE,
+    10,
+  );
+  const batchSize = Number.isInteger(configuredBatchSize) &&
+    configuredBatchSize >= 100 && configuredBatchSize <= 2000
+    ? configuredBatchSize
+    : 500;
+  const warningSampleLimit = Math.max(
+    1,
+    Math.min(
+      Number.parseInt(process.env.MASTER_IMPORT_WARNING_SAMPLE_LIMIT, 10) || 200,
+      1000,
+    ),
+  );
+
+  let importedMasterFile = null;
+  let insertedRecordCount = 0;
+  let lastProgressSaved = 0;
+
+  try {
+    const parsedResult = await parseMasterFileStream(filePath, {
+      originalFileName: safeOriginalFileName,
+      expectedMasterType: expectedMasterType || undefined,
+      batchSize,
+      warningSampleLimit,
+      onMetadata: async (metadata) => {
+        importedMasterFile = await masterFileRepository.createMasterFile({
+          ...metadata,
+          name: masterFileName,
+          originalFileName: safeOriginalFileName,
+          sites: normalizedSites,
+          status: "processing",
+          uploadedBy: adminUserId,
+          updatedBy: adminUserId,
+        });
+      },
+      onBatch: async (records) => {
+        if (!importedMasterFile) {
+          throw createMasterServiceError(
+            "MASTER_IMPORT_METADATA_MISSING",
+            "No fue posible inicializar el archivo madre.",
+            500,
+          );
+        }
+
+        const masterRecords = records.map((record) => ({
+          ...record,
+          masterFileId: importedMasterFile._id,
+          sites: normalizedSites,
+          createdBy: adminUserId,
+          updatedBy: adminUserId,
+        }));
+        const insertedRecords = await masterFileRepository.insertMasterRecords(
+          masterRecords,
+        );
+
+        if (insertedRecords.length !== records.length) {
+          throw createMasterServiceError(
+            "MASTER_RECORD_COUNT_MISMATCH",
+            "No se insertaron todos los registros del lote.",
+            500,
+          );
+        }
+
+        insertedRecordCount += insertedRecords.length;
+      },
+      onProgress: async ({ recordCount }) => {
+        if (
+          importedMasterFile &&
+          recordCount - lastProgressSaved >= 5000
+        ) {
+          lastProgressSaved = recordCount;
+          await masterFileRepository.updateMasterFileById(
+            importedMasterFile._id,
+            {
+              recordCount,
+              updatedBy: adminUserId,
+            },
+          );
+        }
+      },
+    });
+
+    if (!importedMasterFile) {
+      throw createMasterServiceError(
+        "MASTER_IMPORT_NOT_INITIALIZED",
+        "No fue posible iniciar la importación del archivo madre.",
+        500,
+      );
+    }
+
+    if (insertedRecordCount !== parsedResult.recordCount) {
+      throw createMasterServiceError(
+        "MASTER_RECORD_COUNT_MISMATCH",
+        "El total insertado no coincide con las filas procesadas.",
+        500,
+      );
+    }
+
+    importedMasterFile = await masterFileRepository.updateMasterFileById(
+      importedMasterFile._id,
+      {
+        status: "ready",
+        recordCount: insertedRecordCount,
+        warningCount: parsedResult.metadata.warningCount,
+        importWarnings: parsedResult.metadata.importWarnings,
+        lastImportedAt: new Date(),
+        errorMessage: "",
+        updatedBy: adminUserId,
+      },
+    );
+
+    return {
+      masterFile: importedMasterFile,
+      insertedRecordCount,
+      warnings: parsedResult.metadata.importWarnings || [],
+    };
+  } catch (error) {
+    if (importedMasterFile?._id) {
+      await masterFileRepository.deleteMasterRecordsByMasterFileId(
+        importedMasterFile._id,
+      ).catch(() => {});
+      await masterFileRepository.updateMasterFileById(
+        importedMasterFile._id,
+        {
+          status: "failed",
+          recordCount: 0,
+          errorMessage: String(error.message || "Error de importación").slice(0, 1000),
+          updatedBy: adminUserId,
+        },
+      ).catch(() => {});
+    }
+
+    if (!error.statusCode) error.statusCode = 400;
+    throw error;
+  }
+};
+
+/**
  * Verifica que el usuario pueda consultar el archivo.
  */
 const assertMasterFileAccess = (
@@ -2739,6 +2907,7 @@ const deleteMasterFile = async ({
 
 module.exports = {
   importMasterFile,
+  importMasterFileFromPath,
   normalizeMasterSites,
   listMasterFiles,
   lookupMasterRecordByPartNumber,
