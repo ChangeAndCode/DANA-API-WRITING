@@ -626,7 +626,10 @@ const buildMasterRecordFromEditorRow = ({
         ).toUpperCase();
 
       const ignored =
-        header.ignored === true;
+        header.ignored === true ||
+        config.ignoredHeaderKeys.includes(
+          normalizedName,
+        );
 
       const rule = ignored
         ? null
@@ -1519,23 +1522,27 @@ const parseMasterFileBuffer = async (
     );
   }
 
-  const publicHeaders = headers.map(
-    ({
-      originalName,
-      normalizedName,
-      columnIndex,
-      columnLetter,
-      mappedField,
-      ignored,
-    }) => ({
-      originalName,
-      normalizedName,
-      columnIndex,
-      columnLetter,
-      mappedField,
-      ignored,
-    }),
-  );
+  const publicHeaders = headers
+    .filter(
+      (header) =>
+        header.ignored !== true,
+    )
+    .map(
+      ({
+        originalName,
+        normalizedName,
+        columnIndex,
+        columnLetter,
+        mappedField,
+      }) => ({
+        originalName,
+        normalizedName,
+        columnIndex,
+        columnLetter,
+        mappedField,
+        ignored: false,
+      }),
+    );
 
   const imageCountIgnored =
     Array.isArray(workbook.media)

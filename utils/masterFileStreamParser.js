@@ -186,21 +186,25 @@ const parseMasterFileStream = async (filePath, options = {}) => {
             );
           }
 
-          publicHeaders = headers.map(({
-            originalName,
-            normalizedName,
-            columnIndex,
-            columnLetter,
-            mappedField,
-            ignored,
-          }) => ({
-            originalName,
-            normalizedName,
-            columnIndex,
-            columnLetter,
-            mappedField,
-            ignored,
-          }));
+          publicHeaders = headers
+            .filter(
+              (header) =>
+                header.ignored !== true,
+            )
+            .map(({
+              originalName,
+              normalizedName,
+              columnIndex,
+              columnLetter,
+              mappedField,
+            }) => ({
+              originalName,
+              normalizedName,
+              columnIndex,
+              columnLetter,
+              mappedField,
+              ignored: false,
+            }));
           partNumberColumn = partNumberHeader.columnLetter;
 
           if (typeof options.onMetadata === "function") {

@@ -294,12 +294,6 @@ const normalizedValuesSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
-    frontRear: {
-      type: String,
-      trim: true,
-      uppercase: true,
-      default: "",
-    },
     regime: {
       type: String,
       trim: true,

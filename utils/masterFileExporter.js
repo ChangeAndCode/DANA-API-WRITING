@@ -1,5 +1,6 @@
 const path = require("path");
 const ExcelJS = require("exceljs");
+const { filterIgnoredMasterHeaders } = require("../data/masterFileRegistry");
 
 const {
   normalizeCurrencyValue,
@@ -168,17 +169,24 @@ const createMasterFileWorkbook = async ({
       ? masterFile.headerRow
       : 1;
 
-  const headers = Array.isArray(
-    masterFile.headers,
-  )
-    ? [...masterFile.headers]
-    : [];
+  const headers =
+    filterIgnoredMasterHeaders(
+      masterFile.masterType,
+      masterFile.headers,
+    );
 
   headers.sort(
     (firstHeader, secondHeader) =>
       firstHeader.columnIndex -
       secondHeader.columnIndex,
   );
+
+  const retainedColumnIndexes =
+    new Set(
+      headers.map((header) =>
+        Number(header.columnIndex),
+      ),
+    );
 
   const currencyColumnIndexes =
     new Set(
@@ -285,7 +293,12 @@ const createMasterFileWorkbook = async ({
         !Number.isInteger(
           rawCell.columnIndex,
         ) ||
-        rawCell.columnIndex < 1
+        rawCell.columnIndex < 1 ||
+        !retainedColumnIndexes.has(
+          Number(
+            rawCell.columnIndex,
+          ),
+        )
       ) {
         return;
       }

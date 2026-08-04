@@ -399,10 +399,6 @@ const FINISHED_PRODUCT_HEADER_RULES = Object.freeze({
     transform: "text",
   },
 
-  frontrear: {
-    target: "frontRear",
-    transform: "uppercaseText",
-  },
   ...EXPORTATION_HTS_HEADER_RULES,
   ...LICENSE_NUMBER_HEADER_RULES,
   ...LICENSE_EXCEPTION_HEADER_RULES,
@@ -730,6 +726,7 @@ const MASTER_FILE_REGISTRY = Object.freeze({
 
     ignoredHeaderKeys: [
       "image",
+      "frontrear",
     ],
 
     requiredMappedFields: [
@@ -911,6 +908,21 @@ const shouldIgnoreMasterHeader = (
   );
 };
 
+const filterIgnoredMasterHeaders = (
+  masterType,
+  headers = [],
+) => {
+  if (!Array.isArray(headers)) return [];
+
+  return headers.filter((header) =>
+    !shouldIgnoreMasterHeader(
+      masterType,
+      header?.originalName ||
+        header?.normalizedName,
+    ),
+  );
+};
+
 module.exports = {
   MASTER_TYPES,
   MASTER_FILE_REGISTRY,
@@ -919,4 +931,5 @@ module.exports = {
   detectMasterTypeBySheetNames,
   getMasterHeaderRule,
   shouldIgnoreMasterHeader,
+  filterIgnoredMasterHeaders,
 };

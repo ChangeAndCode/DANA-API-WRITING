@@ -17,7 +17,10 @@ const {
   "../utils/masterFileExporter"
 );
 const { VALID_SITES } = require("../data/siteConfig");
-const { MASTER_TYPES } = require("../data/masterFileRegistry");
+const {
+  MASTER_TYPES,
+  filterIgnoredMasterHeaders,
+} = require("../data/masterFileRegistry");
 
 const VALID_MASTER_SITES = VALID_SITES;
 const VALID_MASTER_TYPES = Object.values(MASTER_TYPES);
@@ -2660,6 +2663,20 @@ const copyMasterFile = async ({
           "function"
             ? sourceMasterFile.toObject()
             : sourceMasterFile;
+        const retainedHeaders =
+          filterIgnoredMasterHeaders(
+            sourceData.masterType,
+            sourceData.headers,
+          );
+        const retainedColumnIndexes =
+          new Set(
+            retainedHeaders.map(
+              (header) =>
+                Number(
+                  header.columnIndex,
+                ),
+            ),
+          );
         const sourceRecords =
           await masterFileRepository
             .findActiveMasterRecordsForCopy(
@@ -2684,7 +2701,7 @@ const copyMasterFile = async ({
                 partNumberColumn:
                   sourceData.partNumberColumn,
                 headers:
-                  sourceData.headers || [],
+                  retainedHeaders,
                 recordCount: 0,
                 imageCountIgnored:
                   sourceData.imageCountIgnored ||
@@ -2729,8 +2746,18 @@ const copyMasterFile = async ({
               sourceRow:
                 sourceRecord.sourceRow,
               rawCells:
-                sourceRecord.rawCells ||
-                [],
+                Array.isArray(
+                  sourceRecord.rawCells,
+                )
+                  ? sourceRecord.rawCells.filter(
+                      (rawCell) =>
+                        retainedColumnIndexes.has(
+                          Number(
+                            rawCell.columnIndex,
+                          ),
+                        ),
+                    )
+                  : [],
               normalizedValues:
                 sourceRecord
                   .normalizedValues ||

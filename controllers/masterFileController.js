@@ -9,6 +9,11 @@ const multer = require("multer");
 const masterFileService = require(
   "../services/masterFileService"
 );
+const {
+  filterIgnoredMasterHeaders,
+} = require(
+  "../data/masterFileRegistry",
+);
 
 const {
   convertXlsToXlsx,
@@ -387,6 +392,19 @@ const getMasterFileEditorData = async (req, res) => {
 
     const masterFile = result.masterFile;
 
+    const visibleHeaders =
+      filterIgnoredMasterHeaders(
+        masterFile.masterType,
+        masterFile.headers,
+      );
+
+    const visibleColumnIndexes =
+      new Set(
+        visibleHeaders.map((header) =>
+          Number(header.columnIndex),
+        ),
+      );
+
     return res.status(200).json({
       masterFile: {
         id: masterFile._id,
@@ -401,7 +419,7 @@ const getMasterFileEditorData = async (req, res) => {
         revision: masterFile.revision,
         updatedAt: masterFile.updatedAt,
 
-        headers: (masterFile.headers || []).map((header) => ({
+        headers: visibleHeaders.map((header) => ({
           originalName: header.originalName,
           normalizedName: header.normalizedName,
           columnIndex: header.columnIndex,
@@ -418,12 +436,19 @@ const getMasterFileEditorData = async (req, res) => {
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
 
-        rawCells: (record.rawCells || []).map((cell) => ({
-          header: cell.header,
-          columnIndex: cell.columnIndex,
-          columnLetter: cell.columnLetter,
-          value: cell.value,
-        })),
+        rawCells: (record.rawCells || [])
+          .filter(
+            (cell) =>
+              visibleColumnIndexes.has(
+                Number(cell.columnIndex),
+              ),
+          )
+          .map((cell) => ({
+            header: cell.header,
+            columnIndex: cell.columnIndex,
+            columnLetter: cell.columnLetter,
+            value: cell.value,
+          })),
 
         validationWarnings:
           record.validationWarnings || [],
