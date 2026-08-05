@@ -189,7 +189,7 @@ const finishedProductSchemaSpec = [
   {
     item: 10,
     dataElement: "USA Exportation Code",
-    aliases: ["Export HTS","US EXP","US EXP HTS Code", "Schedule B", "HTS Export"],
+    aliases: ["Export HTS", "US EXP", "US EXP HTS Code", "HTS Export"],
     type: "A",
     length: 12,
     position: "176-187",

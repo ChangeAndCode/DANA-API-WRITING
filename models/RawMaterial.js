@@ -159,7 +159,7 @@ const rawMaterialSchemaSpec = [
   {
     item: 8,
     dataElement: "Exportation HTS Code",
-    aliases: ["US EXP HTS Code","HTS Export", "Export HTS", "HTS Code (Export)", "Schedule B"],
+    aliases: ["US EXP HTS Code", "HTS Export", "Export HTS", "HTS Code (Export)"],
     type: "A",
     length: 12,
     position: "142-153",

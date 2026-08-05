@@ -592,7 +592,6 @@ const MASTER_FILE_REGISTRY = Object.freeze({
 
     ignoredHeaderKeys: [
       "image",
-      "frontrear",
     ],
 
     requiredMappedFields: [
