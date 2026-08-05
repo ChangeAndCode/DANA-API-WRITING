@@ -260,7 +260,11 @@ const finishedProductSchemaSpec = [
   {
     item: 15,
     dataElement: "FDA Affirmation of Compliance Code 1",
-    aliases: ["FDA AOC Code 1", "AOC Code 1"],
+    aliases: [
+      "FDA AOC Code 1",
+      "AOC Code 1",
+      "FDA Affirmation of Compliance Code1",
+    ],
     type: "A",
     length: 3,
     position: "201-203",
@@ -274,7 +278,11 @@ const finishedProductSchemaSpec = [
   {
     item: 16,
     dataElement: "FDA Affirmation of Compliance Qualifier 1",
-    aliases: ["FDA AOC Qualifier 1", "AOC Qualifier 1"],
+    aliases: [
+      "FDA AOC Qualifier 1",
+      "AOC Qualifier 1",
+      "FDA Affirmation of Compliance Qualifier1",
+    ],
     type: "A",
     length: 25,
     position: "204-228",
@@ -288,7 +296,11 @@ const finishedProductSchemaSpec = [
   {
     item: 17,
     dataElement: "FDA Affirmation of Compliance Code 2",
-    aliases: ["FDA AOC Code 2", "AOC Code 2"],
+    aliases: [
+      "FDA AOC Code 2",
+      "AOC Code 2",
+      "FDA Affirmation of Compliance Code2",
+    ],
     type: "A",
     length: 3,
     position: "229-231",
@@ -302,7 +314,11 @@ const finishedProductSchemaSpec = [
   {
     item: 18,
     dataElement: "FDA Affirmation of Compliance Qualifier 2",
-    aliases: ["FDA AOC Qualifier 2", "AOC Qualifier 2"],
+    aliases: [
+      "FDA AOC Qualifier 2",
+      "AOC Qualifier 2",
+      "FDA Affirmation of Compliance Qualifier2",
+    ],
     type: "A",
     length: 25,
     position: "232-256",
@@ -316,7 +332,11 @@ const finishedProductSchemaSpec = [
   {
     item: 19,
     dataElement: "FDA Affirmation of Compliance Code 3",
-    aliases: ["FDA AOC Code 3", "AOC Code 3"],
+    aliases: [
+      "FDA AOC Code 3",
+      "AOC Code 3",
+      "FDA Affirmation of Compliance Code3",
+    ],
     type: "A",
     length: 3,
     position: "257-259",
@@ -330,7 +350,11 @@ const finishedProductSchemaSpec = [
   {
     item: 20,
     dataElement: "FDA Affirmation of Compliance Qualifier 3",
-    aliases: ["FDA AOC Qualifier 3", "AOC Qualifier 3"],
+    aliases: [
+      "FDA AOC Qualifier 3",
+      "AOC Qualifier 3",
+      "FDA Affirmation of Compliance Qualifier3",
+    ],
     type: "A",
     length: 25,
     position: "260-284",
@@ -344,7 +368,11 @@ const finishedProductSchemaSpec = [
   {
     item: 21,
     dataElement: "FDA Affirmation of Compliance Code 4",
-    aliases: ["FDA AOC Code 4", "AOC Code 4"],
+    aliases: [
+      "FDA AOC Code 4",
+      "AOC Code 4",
+      "FDA Affirmation of Compliance Code4",
+    ],
     type: "A",
     length: 3,
     position: "285-287",
@@ -358,7 +386,11 @@ const finishedProductSchemaSpec = [
   {
     item: 22,
     dataElement: "FDA Affirmation of Compliance Qualifier 4",
-    aliases: ["FDA AOC Qualifier 4", "AOC Qualifier 4"],
+    aliases: [
+      "FDA AOC Qualifier 4",
+      "AOC Qualifier 4",
+      "FDA Affirmation of Compliance Qualifier4",
+    ],
     type: "A",
     length: 25,
     position: "288-312",
@@ -372,7 +404,11 @@ const finishedProductSchemaSpec = [
   {
     item: 23,
     dataElement: "FDA Affirmation of Compliance Code 5",
-    aliases: ["FDA AOC Code 5", "AOC Code 5"],
+    aliases: [
+      "FDA AOC Code 5",
+      "AOC Code 5",
+      "FDA Affirmation of Compliance Code5",
+    ],
     type: "A",
     length: 3,
     position: "313-315",
@@ -386,7 +422,11 @@ const finishedProductSchemaSpec = [
   {
     item: 24,
     dataElement: "FDA Affirmation of Compliance Qualifier 5",
-    aliases: ["FDA AOC Qualifier 5", "AOC Qualifier 5"],
+    aliases: [
+      "FDA AOC Qualifier 5",
+      "AOC Qualifier 5",
+      "FDA Affirmation of Compliance Qualifier5",
+    ],
     type: "A",
     length: 25,
     position: "316-340",
@@ -400,7 +440,11 @@ const finishedProductSchemaSpec = [
   {
     item: 25,
     dataElement: "FDA Affirmation of Compliance Code 6",
-    aliases: ["FDA AOC Code 6", "AOC Code 6"],
+    aliases: [
+      "FDA AOC Code 6",
+      "AOC Code 6",
+      "FDA Affirmation of Compliance Code6",
+    ],
     type: "A",
     length: 3,
     position: "341-343",
@@ -414,7 +458,11 @@ const finishedProductSchemaSpec = [
   {
     item: 26,
     dataElement: "FDA Affirmation of Compliance Qualifier 6",
-    aliases: ["FDA AOC Qualifier 6", "AOC Qualifier 6"],
+    aliases: [
+      "FDA AOC Qualifier 6",
+      "AOC Qualifier 6",
+      "FDA Affirmation of Compliance Qualifier6",
+    ],
     type: "A",
     length: 25,
     position: "344-368",
