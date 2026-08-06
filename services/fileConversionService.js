@@ -562,7 +562,7 @@ const formatDateYmd = (value) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return `${y}${m}${day}`;
+  return `${y}-${m}-${day}`;
 };
 
 const toCsvValue = (value) => {
@@ -579,6 +579,28 @@ const toCsvValue = (value) => {
   }
   if (Number.isFinite(value)) return String(value);
   return String(value);
+};
+
+const formatExpectedArrivalDateForDisplay = (value) => {
+  if (value === null || value === undefined || value === "") return "";
+  if (value instanceof Date || typeof value === "number") {
+    return formatDateYmd(value);
+  }
+
+  const text = toCsvValue(value).trim();
+  const compactMatch = text.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compactMatch) {
+    return `${compactMatch[1]}-${compactMatch[2]}-${compactMatch[3]}`;
+  }
+
+  const dashedOrIsoMatch = text.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/,
+  );
+  if (dashedOrIsoMatch) {
+    return `${dashedOrIsoMatch[1]}-${dashedOrIsoMatch[2]}-${dashedOrIsoMatch[3]}`;
+  }
+
+  return text;
 };
 
 async function writeSplScrapCSV(data, filePath) {
@@ -601,7 +623,10 @@ async function writeSplScrapCSV(data, filePath) {
     const line = SPL_SCRAP_HEADERS.map(({ field }) => {
       const raw = pickValue(record, field);
       // basic CSV escaping for commas/quotes
-      let val = toCsvValue(raw);
+      let val =
+        field === "Expected date of arrival"
+          ? formatExpectedArrivalDateForDisplay(raw)
+          : toCsvValue(raw);
       if (/[",\n]/.test(val)) {
         val = `"${val.replace(/"/g, '""')}"`;
       }
@@ -634,6 +659,7 @@ const generateSplScrapFilename = (prefix, date = new Date()) => {
 };
 
 module.exports = {
+  formatExpectedArrivalDateForDisplay,
   processFileForConversion,
   processManualDataForConversion,
   validateManualRowsForDocument,

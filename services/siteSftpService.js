@@ -24,6 +24,7 @@ const SITE_ENV_KEYS = Object.freeze({
     privateKeyPath: "SFTP_PRIVATE_KEY_PATH",
     passphrase: "SFTP_PRIVATE_KEY_PASSPHRASE",
     remoteUploadDir: "SFTP_REMOTE_UPLOAD_DIR",
+    remoteErrorDir: "SFTP_REMOTE_ERROR_DIR",
     nameStrategy: "SFTP_NAME_CONFLICT_STRATEGY",
     maxAttempts: "SFTP_MAX_CONNECTION_ATTEMPTS",
   }),
@@ -35,6 +36,7 @@ const SITE_ENV_KEYS = Object.freeze({
     privateKeyPath: "SFTP_2_PRIVATE_KEY_PATH",
     passphrase: "SFTP_2_PRIVATE_KEY_PASSPHRASE",
     remoteUploadDir: "SFTP_2_REMOTE_UPLOAD_DIR",
+    remoteErrorDir: "SFTP_2_REMOTE_ERROR_DIR",
     nameStrategy: "SFTP_2_NAME_CONFLICT_STRATEGY",
     maxAttempts: "SFTP_2_MAX_CONNECTION_ATTEMPTS",
   }),
@@ -88,6 +90,7 @@ const getSiteConfiguration = (site, env = process.env) => {
     privateKeyPath: String(env[keys.privateKeyPath] || "").trim(),
     passphrase: env[keys.passphrase] || "",
     remoteUploadDir: normalizeRemoteDirectory(env[keys.remoteUploadDir]),
+    remoteErrorDir: normalizeRemoteDirectory(env[keys.remoteErrorDir]),
     nameStrategy: VALID_NAME_STRATEGIES.has(rawStrategy)
       ? rawStrategy
       : "overwrite",
@@ -121,6 +124,7 @@ const validateSiteConfiguration = (site, env = process.env) => {
     missing.push("authentication");
   }
   if (!config.remoteUploadDir) missing.push("remoteUploadDir");
+  if (!config.remoteErrorDir) missing.push("remoteErrorDir");
 
   return {
     valid: missing.length === 0,
@@ -304,21 +308,32 @@ const runWithConnectionRetries = async (config, operation) => {
 const testSiteConnection = async (site) => {
   const config = requireSiteConfiguration(site);
   return runWithConnectionRetries(config, async (client) => {
-    const remoteDirectoryExists = await safeExists(
-      client,
-      config.remoteUploadDir,
-    );
+    const [remoteDirectoryExists, remoteErrorDirectoryExists] =
+      await Promise.all([
+        safeExists(client, config.remoteUploadDir),
+        safeExists(client, config.remoteErrorDir),
+      ]);
+
+    if (!remoteDirectoryExists || !remoteErrorDirectoryExists) {
+      throw createSftpError(
+        "SFTP_REMOTE_DIRECTORY_UNAVAILABLE",
+        "Una carpeta remota SFTP configurada no esta disponible.",
+      );
+    }
+
     return {
       site: config.site,
       remoteDirectoryExists,
+      remoteErrorDirectoryExists,
     };
   });
 };
 
-const uploadFileForSite = async ({
+const uploadFileToDirectoryForSite = async ({
   site,
   localPath,
   fileName,
+  directoryKey,
 }) => {
   if (!localPath) {
     throw createSftpError(
@@ -328,14 +343,15 @@ const uploadFileForSite = async ({
   }
 
   const config = requireSiteConfiguration(site);
+  const remoteDirectory = config[directoryKey];
   const safeFileName = sanitizeRemoteFileName(fileName);
   const requestedRemotePath = path.posix.join(
-    config.remoteUploadDir,
+    remoteDirectory,
     safeFileName,
   );
 
   return runWithConnectionRetries(config, async (client) => {
-    await client.mkdir(config.remoteUploadDir, true);
+    await client.mkdir(remoteDirectory, true);
     const finalRemotePath = await resolveRemotePath(
       client,
       requestedRemotePath,
@@ -351,6 +367,31 @@ const uploadFileForSite = async ({
   });
 };
 
+const uploadFileForSite = (options) =>
+  uploadFileToDirectoryForSite({
+    ...options,
+    directoryKey: "remoteUploadDir",
+  });
+
+const uploadErrorFileForSite = (options) =>
+  uploadFileToDirectoryForSite({
+    ...options,
+    directoryKey: "remoteErrorDir",
+  });
+
+const deleteRemoteFileForSite = async ({ site, remotePath }) => {
+  if (!remotePath) return { deleted: false };
+  const config = requireSiteConfiguration(site);
+
+  return runWithConnectionRetries(config, async (client) => {
+    if (!(await safeExists(client, remotePath))) {
+      return { site: config.site, deleted: false };
+    }
+    await client.delete(remotePath);
+    return { site: config.site, deleted: true };
+  });
+};
+
 const sanitizeSftpError = (error) => {
   const text = getErrorText(error);
 
@@ -361,6 +402,12 @@ const sanitizeSftpError = (error) => {
     return {
       code: error.code,
       message: "La configuracion SFTP de la sede esta incompleta.",
+    };
+  }
+  if (error?.code === "SFTP_REMOTE_DIRECTORY_UNAVAILABLE") {
+    return {
+      code: error.code,
+      message: "Una carpeta remota SFTP configurada no esta disponible.",
     };
   }
   if (error?.code === "SFTP_PRIVATE_KEY_UNAVAILABLE") {
@@ -401,10 +448,12 @@ const sanitizeSftpError = (error) => {
 };
 
 module.exports = {
+  deleteRemoteFileForSite,
   getSiteConfiguration,
   sanitizeRemoteFileName,
   sanitizeSftpError,
   testSiteConnection,
+  uploadErrorFileForSite,
   uploadFileForSite,
   validateSiteConfiguration,
 };

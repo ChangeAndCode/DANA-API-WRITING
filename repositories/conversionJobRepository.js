@@ -127,14 +127,18 @@ const deleteJobsByUserId = async (userId, session = null) => {
  */
 const getLatestAutomatedJobByFileNameAndDocType = async (
   fileName,
-  documentType
+  documentType,
+  site = null,
 ) => {
-  return await ConversionJob.findOne({
+  const query = {
     fileName,
     isAutomated: true,
     "conversionOptions.documentType": documentType,
     remoteConvertedPath: { $exists: true },
-  })
+  };
+  if (site) query.site = site;
+
+  return await ConversionJob.findOne(query)
     .sort({ createdAt: -1 })
     .lean();
 };

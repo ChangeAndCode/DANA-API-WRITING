@@ -363,9 +363,9 @@ const splScrapMetaFields = [
     label: "Expected date of arrival",
     required: true,
     inputType: "text",
-    placeholder: "YYYYMMDD",
-    pattern: "\\d{8}",
-    title: "Fecha en formato YYYYMMDD",
+    placeholder: "YYYY-MM-DD",
+    pattern: "\\d{4}-\\d{2}-\\d{2}",
+    title: "Fecha en formato YYYY-MM-DD",
   },
   { key: "Waybill number", label: "Waybill number" },
   { key: "Total gross weight", label: "Total gross weight" },
@@ -2580,8 +2580,7 @@ function setSplScrapRows(rows = []) {
     const value = firstRow[field.key];
     if (field.key === "Expected date of arrival") {
       input.value =
-        value !== undefined && value !== null ? formatYmdCompact(value) : "";
-      input.value = formatYmdDigits(input.value);
+        value !== undefined && value !== null ? formatYmd(value) : "";
       return;
     }
     input.value = value !== undefined && value !== null ? String(value) : "";
@@ -2965,27 +2964,6 @@ function configureYmdInput(input) {
   );
 }
 
-function formatYmdDigits(value) {
-  const digits = String(value || "")
-    .replace(/\D/g, "")
-    .slice(0, 8);
-  return digits;
-}
-
-function formatYmdCompact(value) {
-  if (value === null || value === undefined || value === "") return "";
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const y = value.getFullYear();
-    const m = String(value.getMonth() + 1).padStart(2, "0");
-    const d = String(value.getDate()).padStart(2, "0");
-    return `${y}${m}${d}`;
-  }
-  const raw = String(value).trim();
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length >= 8) return digits.slice(0, 8);
-  return raw;
-}
-
 function parseSplScrapNumericInput(value) {
   if (value === null || value === undefined) return null;
   const normalized = String(value).trim().replace(/,/g, "");
@@ -3232,10 +3210,7 @@ function buildSplScrapMetaFields() {
     if (field.pattern) input.setAttribute("pattern", field.pattern);
     if (field.title) input.title = field.title;
     if (field.key === "Expected date of arrival") {
-      input.maxLength = 8;
-      input.addEventListener("input", (e) => {
-        e.target.value = formatYmdDigits(e.target.value);
-      });
+      configureYmdInput(input);
     }
     if (field.key === "Type of shipment") {
       input.addEventListener("change", () => {

@@ -3,7 +3,7 @@ const fs = require("fs/promises");
 const path = require("path");
 const { fork } = require("child_process");
 const fileConversionService = require("./fileConversionService");
-const sftpService = require("./sftpService");
+const siteSftpService = require("./siteSftpService");
 const conversionJobRepository = require("../repositories/conversionJobRepository");
 const { getDocumentTypeByPrefix } = require("../data/documentTypeRegistry");
 const { detectDocumentType } = require("../utils/documentDetector");
@@ -20,6 +20,11 @@ const FAILED_DIR =
   path.join(__dirname, "..", "sftp_failed");
 const TEMP_OUTPUT_DIR = path.join(__dirname, "..", "temp_converted_files");
 const TEMP_ERROR_DIR = path.join(__dirname, "..", "temp_error_reports");
+const AUTOMATED_SITE = String(
+  process.env.SFTP_AUTOMATED_SITE || "gaiim",
+)
+  .trim()
+  .toLowerCase();
 const WORKER_PATH = path.join(
   __dirname,
   "..",
@@ -152,6 +157,7 @@ const processSingleFile = async ({
   filePath,
   originalName = path.basename(filePath),
   readPath = filePath,
+  site = AUTOMATED_SITE,
 }) => {
   let documentType = null;
   let fileBuffer;
@@ -195,11 +201,13 @@ const processSingleFile = async ({
 
     const outputFormat = getDefaultFormat(documentType) || "txt";
     const conversionOptions = { documentType };
+    const sftpConfiguration = siteSftpService.getSiteConfiguration(site);
 
     console.log(`[Automated Service] Processing file: ${originalName}`);
 
     newJob = await conversionJobRepository.createConversionJob({
       userId: null,
+      site: sftpConfiguration.site,
       fileName: originalName,
       originalFilePath: filePath,
       outputFormat,
@@ -212,6 +220,7 @@ const processSingleFile = async ({
       await conversionJobRepository.getLatestAutomatedJobByFileNameAndDocType(
         originalName,
         documentType,
+        sftpConfiguration.site,
       );
     const previousRemotePath = previousJob?.remoteConvertedPath || null;
 
@@ -234,11 +243,6 @@ const processSingleFile = async ({
         convertedFilePath || "null"
       }, errorReportPath=${errorReportPath || "null"}`,
     );
-
-    const sftpRemoteUploadDir =
-      process.env.SFTP_REMOTE_UPLOAD_DIR || "/converted_files";
-    const sftpRemoteErrorDir =
-      process.env.SFTP_REMOTE_ERROR_DIR || "/error_reports";
 
     const fileExists = async (candidatePath) => {
       try {
@@ -268,26 +272,46 @@ const processSingleFile = async ({
         .basename(convertedFilePath)
         .replace(/\.txt$/i, "");
       remoteConvertedPath = toPosix(
-        path.join(sftpRemoteUploadDir, remoteBase),
+        path.posix.join(sftpConfiguration.remoteUploadDir, remoteBase),
       );
       uploads.push({
         local: convertedFilePath,
         remote: remoteConvertedPath,
+        purpose: "upload",
       });
     }
 
     if (errorReportPath && (await fileExists(errorReportPath))) {
       remoteErrorPath = toPosix(
-        path.join(sftpRemoteErrorDir, path.basename(errorReportPath)),
+        path.posix.join(
+          sftpConfiguration.remoteErrorDir,
+          path.basename(errorReportPath),
+        ),
       );
       uploads.push({
         local: errorReportPath,
         remote: remoteErrorPath,
+        purpose: "error",
       });
     }
 
     if (uploads.length) {
-      const uploadResults = await sftpService.uploadFilesViaSftp(uploads);
+      const uploadResults = [];
+      for (const upload of uploads) {
+        const uploadMethod =
+          upload.purpose === "error"
+            ? siteSftpService.uploadErrorFileForSite
+            : siteSftpService.uploadFileForSite;
+        const result = await uploadMethod({
+          site: sftpConfiguration.site,
+          localPath: upload.local,
+          fileName: path.posix.basename(upload.remote),
+        });
+        uploadResults.push({
+          local: upload.local,
+          remote: result.remotePath,
+        });
+      }
       const convertedUpload = uploadResults.find(
         (result) => result.local === convertedFilePath,
       );
@@ -302,7 +326,10 @@ const processSingleFile = async ({
         remoteConvertedPath &&
         previousRemotePath !== remoteConvertedPath
       ) {
-        await sftpService.deleteRemoteFile(previousRemotePath);
+        await siteSftpService.deleteRemoteFileForSite({
+          site: sftpConfiguration.site,
+          remotePath: previousRemotePath,
+        });
       }
     } else {
       console.log(
