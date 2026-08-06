@@ -714,11 +714,6 @@ h2 {
   cursor: not-allowed;
 }
 
-.sftp-site-help {
-  color: #667085;
-  font-size: 0.82em;
-}
-
 .sftp-simulation-option {
   display: flex;
   align-items: flex-start;

@@ -18,7 +18,6 @@
   const sftpModal = document.getElementById("sftpModal");
   const sftpSourceFileName = document.getElementById("sftpSourceFileName");
   const sftpSiteSelect = document.getElementById("sftpSiteSelect");
-  const sftpSiteHelp = document.getElementById("sftpSiteHelp");
   const sftpDryRun = document.getElementById("sftpDryRun");
   const sftpModalStatusIndicator = document.getElementById("sftpModalStatusIndicator");
   const sftpModalStatusText = document.getElementById("sftpModalStatusText");
@@ -542,12 +541,12 @@
       return "Envio en curso";
     }
     if (status === "failed") {
-      return isDryRun ? "Probar reintento" : "Reintentar";
+      return "Reintentar";
     }
     if (status === "sent") {
-      return isDryRun ? "Probar reenvio" : "Enviar nuevamente";
+      return isDryRun ? "Reenv\u00edo" : "Enviar nuevamente";
     }
-    return isDryRun ? "Probar envio" : "Enviar";
+    return isDryRun ? "Env\u00edo" : "Enviar";
   };
 
   const updateSftpControls = () => {
@@ -633,14 +632,6 @@
     if (sftpDryRun) {
       sftpDryRun.checked = true;
     }
-    if (sftpSiteHelp) {
-      sftpSiteHelp.textContent = isAdminViewer
-        ? "Selecciona la configuracion SFTP de la sede destino."
-        : selectedSite
-          ? "La sede corresponde a tu archivo y no puede modificarse."
-          : "No tienes una sede asignada para realizar el envio.";
-    }
-
     renderSftpModalDetails(doc);
     updateSftpControls();
     if (sftpModal) sftpModal.classList.remove("hidden");
