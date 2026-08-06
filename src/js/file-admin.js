@@ -18,7 +18,6 @@
   const sftpModal = document.getElementById("sftpModal");
   const sftpSourceFileName = document.getElementById("sftpSourceFileName");
   const sftpSiteSelect = document.getElementById("sftpSiteSelect");
-  const sftpDryRun = document.getElementById("sftpDryRun");
   const sftpModalStatusIndicator = document.getElementById("sftpModalStatusIndicator");
   const sftpModalStatusText = document.getElementById("sftpModalStatusText");
   const sftpAttempts = document.getElementById("sftpAttempts");
@@ -535,18 +534,17 @@
 
   const getSftpActionLabel = () => {
     const status = getSftpStatusKey(pendingSftpDoc);
-    const isDryRun = !!sftpDryRun?.checked;
 
     if (status === "pending" || status === "sending") {
-      return "Envio en curso";
+      return "Env\u00edo en curso";
     }
     if (status === "failed") {
       return "Reintentar";
     }
     if (status === "sent") {
-      return isDryRun ? "Reenv\u00edo" : "Enviar nuevamente";
+      return "Reenv\u00edo";
     }
-    return isDryRun ? "Env\u00edo" : "Enviar";
+    return "Env\u00edo";
   };
 
   const updateSftpControls = () => {
@@ -556,9 +554,6 @@
 
     if (sftpSiteSelect) {
       sftpSiteSelect.disabled = isSftpSubmitting || !isAdminViewer;
-    }
-    if (sftpDryRun) {
-      sftpDryRun.disabled = isSftpSubmitting || isInProgress;
     }
     if (sftpCancelBtn) {
       sftpCancelBtn.disabled = isSftpSubmitting;
@@ -629,9 +624,6 @@
     if (sftpSiteSelect) {
       sftpSiteSelect.value = selectedSite;
     }
-    if (sftpDryRun) {
-      sftpDryRun.checked = true;
-    }
     renderSftpModalDetails(doc);
     updateSftpControls();
     if (sftpModal) sftpModal.classList.remove("hidden");
@@ -639,8 +631,8 @@
     window.setTimeout(() => {
       if (isAdminViewer && sftpSiteSelect) {
         sftpSiteSelect.focus();
-      } else if (sftpDryRun) {
-        sftpDryRun.focus();
+      } else if (sftpConfirmBtn && !sftpConfirmBtn.disabled) {
+        sftpConfirmBtn.focus();
       }
     }, 0);
   };
@@ -698,7 +690,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             site,
-            dryRun: !!sftpDryRun?.checked,
+            dryRun: false,
           }),
         },
       );
@@ -712,9 +704,7 @@
 
       showSftpModalMessage(
         data.message ||
-          (sftpDryRun?.checked
-            ? "Simulacion SFTP completada correctamente."
-            : "Archivo enviado por SFTP correctamente."),
+          "Archivo enviado por SFTP correctamente.",
         "success",
       );
     } catch (error) {
@@ -1024,13 +1014,6 @@
 
   if (sftpSiteSelect) {
     sftpSiteSelect.addEventListener("change", () => {
-      clearSftpModalMessage();
-      updateSftpControls();
-    });
-  }
-
-  if (sftpDryRun) {
-    sftpDryRun.addEventListener("change", () => {
       clearSftpModalMessage();
       updateSftpControls();
     });

@@ -714,36 +714,6 @@ h2 {
   cursor: not-allowed;
 }
 
-.sftp-simulation-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 16px;
-  padding: 12px;
-  border-radius: 8px;
-  background: #fff8cc;
-  cursor: pointer;
-}
-
-.sftp-simulation-option input {
-  width: 18px;
-  height: 18px;
-  margin: 1px 0 0;
-  flex: 0 0 auto;
-}
-
-.sftp-simulation-option span {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  color: #3f3f46;
-}
-
-.sftp-simulation-option small {
-  color: #666;
-  font-weight: 400;
-}
-
 .sftp-audit-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
