@@ -118,6 +118,64 @@
       </div>
     </div>
   </div>
+  <div id="sftpModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="sftpModalTitle">
+    <div class="modal sftp-modal">
+      <h3 id="sftpModalTitle">Enviar archivo por SFTP</h3>
+      <p class="sftp-file-summary">
+        Archivo: <strong id="sftpSourceFileName">-</strong>
+      </p>
+
+      <div class="sftp-modal-status">
+        <span id="sftpModalStatusIndicator" class="sftp-status-indicator sftp-status-not-sent" aria-hidden="true"></span>
+        <span id="sftpModalStatusText">Sin env&iacute;o SFTP</span>
+      </div>
+
+      <div class="modal-form-group">
+        <label for="sftpSiteSelect">Sede de destino</label>
+        <select id="sftpSiteSelect">
+          <option value="">-- Seleccione una sede --</option>
+          <option value="gaiim">GAIIM</option>
+          <option value="p1a">P1A</option>
+        </select>
+        <small id="sftpSiteHelp" class="sftp-site-help"></small>
+      </div>
+
+      <label class="sftp-simulation-option" for="sftpDryRun">
+        <input type="checkbox" id="sftpDryRun" checked />
+        <span>
+          <strong>Modo simulaci&oacute;n</strong>
+          <small>Valida el flujo sin transferir el archivo al servidor.</small>
+        </span>
+      </label>
+
+      <dl class="sftp-audit-grid">
+        <div>
+          <dt>Intentos</dt>
+          <dd id="sftpAttempts">0</dd>
+        </div>
+        <div>
+          <dt>&Uacute;ltimo intento</dt>
+          <dd id="sftpLastAttempt">-</dd>
+        </div>
+        <div>
+          <dt>&Uacute;ltimo usuario</dt>
+          <dd id="sftpLastUser">-</dd>
+        </div>
+      </dl>
+
+      <div id="sftpLastErrorRow" class="sftp-last-error hidden">
+        <strong>&Uacute;ltimo error:</strong>
+        <span id="sftpLastError">-</span>
+      </div>
+
+      <p id="sftpModalMessage" class="sftp-modal-message hidden" role="status" aria-live="polite"></p>
+
+      <div class="modal-actions">
+        <button type="button" id="sftpCancelBtn" class="button">Cancelar</button>
+        <button type="button" id="sftpConfirmBtn" class="button sftp-confirm-btn">Probar env&iacute;o</button>
+      </div>
+    </div>
+  </div>
   <script type="module" src="../js/file-admin.js"></script>
 </body>
 

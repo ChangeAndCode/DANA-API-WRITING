@@ -15,6 +15,21 @@
   const copyConfirmBtnDefaultText = copyConfirmBtn
     ? copyConfirmBtn.textContent
     : "Crear copia";
+  const sftpModal = document.getElementById("sftpModal");
+  const sftpSourceFileName = document.getElementById("sftpSourceFileName");
+  const sftpSiteSelect = document.getElementById("sftpSiteSelect");
+  const sftpSiteHelp = document.getElementById("sftpSiteHelp");
+  const sftpDryRun = document.getElementById("sftpDryRun");
+  const sftpModalStatusIndicator = document.getElementById("sftpModalStatusIndicator");
+  const sftpModalStatusText = document.getElementById("sftpModalStatusText");
+  const sftpAttempts = document.getElementById("sftpAttempts");
+  const sftpLastAttempt = document.getElementById("sftpLastAttempt");
+  const sftpLastUser = document.getElementById("sftpLastUser");
+  const sftpLastErrorRow = document.getElementById("sftpLastErrorRow");
+  const sftpLastError = document.getElementById("sftpLastError");
+  const sftpModalMessage = document.getElementById("sftpModalMessage");
+  const sftpCancelBtn = document.getElementById("sftpCancelBtn");
+  const sftpConfirmBtn = document.getElementById("sftpConfirmBtn");
 
   // Filtros por columna
   const filterNombre = document.getElementById("filterNombre");
@@ -29,6 +44,11 @@
   const SITE_LABELS = {
     gaiim: "GAIIM",
     p1a: "P1A",
+  };
+
+  const normalizeSite = (site) => {
+    const normalized = String(site || "").trim().toLowerCase();
+    return SITE_LABELS[normalized] ? normalized : "";
   };
   const SFTP_STATUS_META = {
     not_sent: {
@@ -53,12 +73,53 @@
     },
   };
 
-  const getSftpStatusMeta = (doc) => {
+  const getSftpStatusKey = (doc) => {
     const status = String(
       doc?.sftpStatus || doc?.sftpDelivery?.status || "not_sent",
-    ).toLowerCase();
+    )
+      .trim()
+      .toLowerCase();
+    return SFTP_STATUS_META[status] ? status : "not_sent";
+  };
+
+  const getSftpStatusMeta = (doc) => {
+    const status = getSftpStatusKey(doc);
 
     return SFTP_STATUS_META[status] || SFTP_STATUS_META.not_sent;
+  };
+
+  const getSftpDelivery = (doc) => {
+    return doc?.sftpDelivery && typeof doc.sftpDelivery === "object"
+      ? doc.sftpDelivery
+      : {};
+  };
+
+  const getSftpLastUserLabel = (doc) => {
+    const lastUser = getSftpDelivery(doc).lastAttemptBy;
+    if (!lastUser) return "-";
+    if (typeof lastUser === "object") {
+      return lastUser.displayName || lastUser.email || lastUser._id || "-";
+    }
+    return userCache.get(String(lastUser)) || String(lastUser);
+  };
+
+  const getSftpStatusTitle = (doc) => {
+    const delivery = getSftpDelivery(doc);
+    const details = [getSftpStatusMeta(doc).label];
+    const site = normalizeSite(delivery.site || doc?.site);
+
+    if (site) details.push("Sede: " + getSiteLabel(site));
+    if (Number.isFinite(Number(delivery.attempts))) {
+      details.push("Intentos: " + Number(delivery.attempts));
+    }
+    if (delivery.lastAttemptAt) {
+      details.push("Ultimo intento: " + formatDate(delivery.lastAttemptAt));
+    }
+    if (delivery.lastError) {
+      details.push("Error: " + String(delivery.lastError));
+    }
+
+    return details.join("\n");
   };
 
     const getSiteLabel = (site) => {
@@ -86,6 +147,21 @@
       isAdminViewer = false;
       applySiteColumnVisibility();
       console.warn("No se pudo verificar si el usuario es admin.", error);
+    }
+  };
+
+  const loadCurrentUserProfile = async () => {
+    try {
+      const response = await fetch("/api/user/profile");
+      if (!response.ok) {
+        currentUserSite = "";
+        return;
+      }
+      const data = await response.json();
+      currentUserSite = normalizeSite(data?.user?.site);
+    } catch (error) {
+      currentUserSite = "";
+      console.warn("No se pudo cargar la sede del usuario.", error);
     }
   };
 
@@ -125,7 +201,7 @@
       const sftpStatusIndicator = document.createElement("span");
       sftpStatusIndicator.className =
         `sftp-status-indicator ${sftpStatusMeta.className}`;
-      sftpStatusIndicator.title = sftpStatusMeta.label;
+      sftpStatusIndicator.title = getSftpStatusTitle(doc);
       sftpStatusIndicator.setAttribute("aria-label", sftpStatusMeta.label);
       sftpStatusIndicator.setAttribute("role", "img");
       sftpStatusCell.appendChild(sftpStatusIndicator);
@@ -180,6 +256,10 @@
       sftpBtn.dataset.documentId = doc._id;
       sftpBtn.dataset.documentType = currentDocType;
       sftpBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="15" height="5" rx="1.5"/><rect x="2.5" y="12" width="15" height="5" rx="1.5"/><circle cx="5.5" cy="5.5" r="0.7" fill="currentColor" stroke="none"/><circle cx="5.5" cy="14.5" r="0.7" fill="currentColor" stroke="none"/><path d="M10 14V7.5m0 0L7.8 9.7M10 7.5l2.2 2.2"/></svg>`;
+
+      sftpBtn.addEventListener("click", () => {
+        openSftpModal(doc);
+      });
       actionsWrap.style.gap = "4px";
       actionsWrap.appendChild(downloadBtn);
       actionsWrap.appendChild(updateBtn);
@@ -317,6 +397,9 @@
   let pendingDeleteId = "";
   let pendingCopyDoc = null;
   let usersLoaded = false;
+  let pendingSftpDoc = null;
+  let currentUserSite = "";
+  let isSftpSubmitting = false;
 
   const userCache = new Map();
 
@@ -432,6 +515,224 @@
       if (copyModal && !copyModal.classList.contains("hidden")) {
         setCopySubmitting(false);
       }
+    }
+  };
+
+  const clearSftpModalMessage = () => {
+    if (!sftpModalMessage) return;
+    sftpModalMessage.textContent = "";
+    sftpModalMessage.classList.add("hidden");
+    sftpModalMessage.classList.remove("is-error", "is-success");
+  };
+
+  const showSftpModalMessage = (message, type = "error") => {
+    if (!sftpModalMessage) return;
+    sftpModalMessage.textContent = message;
+    sftpModalMessage.classList.remove("hidden", "is-error", "is-success");
+    sftpModalMessage.classList.add(
+      type === "success" ? "is-success" : "is-error",
+    );
+  };
+
+  const getSftpActionLabel = () => {
+    const status = getSftpStatusKey(pendingSftpDoc);
+    const isDryRun = !!sftpDryRun?.checked;
+
+    if (status === "pending" || status === "sending") {
+      return "Envio en curso";
+    }
+    if (status === "failed") {
+      return isDryRun ? "Probar reintento" : "Reintentar";
+    }
+    if (status === "sent") {
+      return isDryRun ? "Probar reenvio" : "Enviar nuevamente";
+    }
+    return isDryRun ? "Probar envio" : "Enviar";
+  };
+
+  const updateSftpControls = () => {
+    const status = getSftpStatusKey(pendingSftpDoc);
+    const isInProgress = status === "pending" || status === "sending";
+    const hasSite = !!normalizeSite(sftpSiteSelect?.value);
+
+    if (sftpSiteSelect) {
+      sftpSiteSelect.disabled = isSftpSubmitting || !isAdminViewer;
+    }
+    if (sftpDryRun) {
+      sftpDryRun.disabled = isSftpSubmitting || isInProgress;
+    }
+    if (sftpCancelBtn) {
+      sftpCancelBtn.disabled = isSftpSubmitting;
+    }
+    if (sftpConfirmBtn) {
+      sftpConfirmBtn.disabled =
+        isSftpSubmitting || isInProgress || !hasSite;
+      sftpConfirmBtn.textContent = isSftpSubmitting
+        ? "Procesando..."
+        : getSftpActionLabel();
+    }
+  };
+
+  const renderSftpModalDetails = (doc) => {
+    const delivery = getSftpDelivery(doc);
+    const statusMeta = getSftpStatusMeta(doc);
+
+    if (sftpModalStatusIndicator) {
+      sftpModalStatusIndicator.className = [
+        "sftp-status-indicator",
+        statusMeta.className,
+      ].join(" ");
+    }
+    if (sftpModalStatusText) {
+      sftpModalStatusText.textContent = statusMeta.label;
+    }
+    if (sftpAttempts) {
+      const attempts = Number(delivery.attempts);
+      sftpAttempts.textContent = Number.isFinite(attempts) ? attempts : 0;
+    }
+    if (sftpLastAttempt) {
+      sftpLastAttempt.textContent = delivery.lastAttemptAt
+        ? formatDate(delivery.lastAttemptAt)
+        : "-";
+    }
+    if (sftpLastUser) {
+      sftpLastUser.textContent = getSftpLastUserLabel(doc);
+    }
+
+    const lastError = delivery.lastError || delivery.error || "";
+    if (sftpLastError) {
+      sftpLastError.textContent = lastError || "-";
+    }
+    if (sftpLastErrorRow) {
+      sftpLastErrorRow.classList.toggle("hidden", !lastError);
+    }
+  };
+
+  const closeSftpModal = () => {
+    if (isSftpSubmitting) return;
+    pendingSftpDoc = null;
+    clearSftpModalMessage();
+    if (sftpModal) sftpModal.classList.add("hidden");
+  };
+
+  const openSftpModal = (doc) => {
+    pendingSftpDoc = doc || null;
+    clearSftpModalMessage();
+
+    if (sftpSourceFileName) {
+      sftpSourceFileName.textContent = getAdminDocName(doc);
+    }
+
+    const delivery = getSftpDelivery(doc);
+    const selectedSite = normalizeSite(
+      delivery.site || doc?.site || currentUserSite,
+    );
+    if (sftpSiteSelect) {
+      sftpSiteSelect.value = selectedSite;
+    }
+    if (sftpDryRun) {
+      sftpDryRun.checked = true;
+    }
+    if (sftpSiteHelp) {
+      sftpSiteHelp.textContent = isAdminViewer
+        ? "Selecciona la configuracion SFTP de la sede destino."
+        : selectedSite
+          ? "La sede corresponde a tu archivo y no puede modificarse."
+          : "No tienes una sede asignada para realizar el envio.";
+    }
+
+    renderSftpModalDetails(doc);
+    updateSftpControls();
+    if (sftpModal) sftpModal.classList.remove("hidden");
+
+    window.setTimeout(() => {
+      if (isAdminViewer && sftpSiteSelect) {
+        sftpSiteSelect.focus();
+      } else if (sftpDryRun) {
+        sftpDryRun.focus();
+      }
+    }, 0);
+  };
+
+  const applySftpResponseToDocument = (data) => {
+    if (!pendingSftpDoc || !data || typeof data !== "object") return;
+
+    const responseDoc = data.document || data.adminFile;
+    if (responseDoc && typeof responseDoc === "object") {
+      Object.assign(pendingSftpDoc, responseDoc);
+    }
+
+    const responseDelivery =
+      data.sftpDelivery || data.delivery || responseDoc?.sftpDelivery;
+    if (responseDelivery && typeof responseDelivery === "object") {
+      pendingSftpDoc.sftpDelivery = responseDelivery;
+    }
+    if (data.sftpStatus) {
+      pendingSftpDoc.sftpStatus = data.sftpStatus;
+    }
+
+    const documentIndex = allFilesList.findIndex(
+      (doc) => String(doc._id) === String(pendingSftpDoc._id),
+    );
+    if (documentIndex >= 0) {
+      allFilesList[documentIndex] = pendingSftpDoc;
+    }
+
+    renderSortedDocuments();
+    renderSftpModalDetails(pendingSftpDoc);
+  };
+
+  const submitSftp = async () => {
+    if (!pendingSftpDoc || !currentDocType || isSftpSubmitting) return;
+
+    const site = normalizeSite(sftpSiteSelect?.value);
+    if (!site) {
+      showSftpModalMessage("Selecciona una sede de destino.");
+      if (isAdminViewer && sftpSiteSelect) sftpSiteSelect.focus();
+      return;
+    }
+
+    clearSftpModalMessage();
+    isSftpSubmitting = true;
+    updateSftpControls();
+
+    try {
+      const response = await fetch(
+        "/api/files/admin-files/" +
+          encodeURIComponent(pendingSftpDoc._id) +
+          "/sftp?type=" +
+          encodeURIComponent(currentDocType),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            site,
+            dryRun: !!sftpDryRun?.checked,
+          }),
+        },
+      );
+
+      const data = await response.json().catch(() => ({}));
+      applySftpResponseToDocument(data);
+
+      if (!response.ok) {
+        throw new Error(data.message || "No se pudo procesar el envio SFTP.");
+      }
+
+      showSftpModalMessage(
+        data.message ||
+          (sftpDryRun?.checked
+            ? "Simulacion SFTP completada correctamente."
+            : "Archivo enviado por SFTP correctamente."),
+        "success",
+      );
+    } catch (error) {
+      showSftpModalMessage(
+        error.message || "No se pudo procesar el envio SFTP.",
+      );
+    } finally {
+      isSftpSubmitting = false;
+      updateSftpControls();
     }
   };
 
@@ -627,7 +928,7 @@
     renderEmpty("Este tipo aun no esta habilitado.");
   };
 
-  await loadAdminStatus();
+  await Promise.all([loadAdminStatus(), loadCurrentUserProfile()]);
   panel.classList.remove("hidden");
   renderEmpty("Seleccione un tipo de archivo.");
   loadUsers();
@@ -726,8 +1027,40 @@
     });
   }
 
+  if (sftpCancelBtn) {
+    sftpCancelBtn.addEventListener("click", closeSftpModal);
+  }
+
+  if (sftpSiteSelect) {
+    sftpSiteSelect.addEventListener("change", () => {
+      clearSftpModalMessage();
+      updateSftpControls();
+    });
+  }
+
+  if (sftpDryRun) {
+    sftpDryRun.addEventListener("change", () => {
+      clearSftpModalMessage();
+      updateSftpControls();
+    });
+  }
+
+  if (sftpConfirmBtn) {
+    sftpConfirmBtn.addEventListener("click", submitSftp);
+  }
+
+  if (sftpModal) {
+    sftpModal.addEventListener("click", (event) => {
+      if (event.target === sftpModal) closeSftpModal();
+    });
+  }
+
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (sftpModal && !sftpModal.classList.contains("hidden")) {
+      closeSftpModal();
+      return;
+    }
     if (copyModal && !copyModal.classList.contains("hidden")) {
       closeCopyModal();
       return;
