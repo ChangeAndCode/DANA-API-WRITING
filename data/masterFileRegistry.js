@@ -467,25 +467,51 @@ const RAW_MATERIAL_HEADER_RULES = Object.freeze({
 
 const BILL_OF_MATERIALS_HEADER_RULES =
   Object.freeze({
-    finishedgoodpartnumber: {
+    ...createMasterHeaderAliasRules({
+      dataElement: "Finished Good Part Number",
+      aliases: [
+        "Finish Goods",
+        "Finished Goods",
+        "FG Part Number",
+        "Parent Part Number",
+        "Parent SKU",
+        "Assembly SKU",
+        "Finished Good SKU",
+      ],
       target: "partNumber",
       transform: "partNumber",
-    },
+    }),
 
-    componentpartnumber: {
+    ...createMasterHeaderAliasRules({
+      dataElement: "Component Part Number",
+      aliases: [
+        "PN",
+        "Component PN",
+        "Component SKU",
+        "Child Part Number",
+        "Raw Material Part Number",
+        "RM Part Number",
+      ],
       target: "componentPartNumber",
       transform: "partNumber",
-    },
+    }),
 
     type: {
       target: "bomType",
       transform: "uppercaseText",
     },
 
-    quantity: {
+    ...createMasterHeaderAliasRules({
+      dataElement: "Quantity",
+      aliases: [
+        "QTY",
+        "Qty",
+        "BOM Quantity",
+        "Quantity Per",
+      ],
       target: "quantity",
       transform: "number",
-    },
+    }),
 
     unitofmeasure: {
       target: "unitOfMeasure",
@@ -663,6 +689,9 @@ const MASTER_FILE_REGISTRY = Object.freeze({
 
     partNumberHeaderKeys: [
       "finishedgoodpartnumber",
+      "finishgoods",
+      "finishedgoods",
+      "fgpartnumber",
     ],
 
     ignoredHeaderKeys: [
@@ -675,7 +704,6 @@ const MASTER_FILE_REGISTRY = Object.freeze({
       "bomType",
       "quantity",
       "unitOfMeasure",
-      "componentClassification",
     ],
 
     allowDuplicatePartNumbers: true,

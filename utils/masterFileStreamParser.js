@@ -4,9 +4,9 @@ const fsPromises = require("fs/promises");
 const ExcelJS = require("exceljs");
 
 const {
+  MASTER_TYPES,
   normalizeMasterHeader,
   getMasterFileConfig,
-  detectMasterTypeBySheetNames,
   getCanonicalMasterHeaders,
 } = require("../data/masterFileRegistry");
 
@@ -21,11 +21,13 @@ const {
   resolveHeaderRule,
   validateRequiredHeaders,
   findPartNumberHeader,
+  summarizeMasterHeaderCandidate,
   parseDataRow,
 } = require("./masterFileParser");
 
 const DEFAULT_BATCH_SIZE = 500;
 const DEFAULT_WARNING_SAMPLE_LIMIT = 200;
+const DEFAULT_MASTER_HEADER_SCAN_LIMIT = 25;
 
 const toExcelColumnLetter = (columnIndex) => {
   let value = Number(columnIndex);
@@ -128,6 +130,15 @@ const parseMasterFileStream = async (filePath, options = {}) => {
     Number.parseInt(options.warningSampleLimit, 10) ||
       DEFAULT_WARNING_SAMPLE_LIMIT,
   );
+  const parsedHeaderScanLimit = Number.parseInt(
+    options.headerScanLimit,
+    10,
+  );
+  const headerScanLimit =
+    Number.isInteger(parsedHeaderScanLimit) &&
+    parsedHeaderScanLimit > 0
+      ? parsedHeaderScanLimit
+      : DEFAULT_MASTER_HEADER_SCAN_LIMIT;
   const checksum = await calculateFileChecksum(filePath);
   const workbookReader = new ExcelJS.stream.xlsx.WorkbookReader(filePath, {
     worksheets: "emit",
@@ -139,6 +150,7 @@ const parseMasterFileStream = async (filePath, options = {}) => {
 
   let detectedMasterType = "";
   let sourceSheet = "";
+  let detectedHeaderRow = 0;
   let publicHeaders = [];
   let partNumberColumn = "";
   let recordCount = 0;
@@ -149,6 +161,7 @@ const parseMasterFileStream = async (filePath, options = {}) => {
   const partNumberCounts = new Map();
   const warningSamples = [];
   let batch = [];
+  let selectedConfig = null;
 
   const appendWarningSample = (message) => {
     if (warningSamples.length < warningSampleLimit) {
@@ -158,35 +171,105 @@ const parseMasterFileStream = async (filePath, options = {}) => {
 
   try {
     for await (const worksheet of workbookReader) {
-      const worksheetType = detectMasterTypeBySheetNames([worksheet.name]);
-      if (!worksheetType || sourceSheet) continue;
+      if (sourceSheet) continue;
 
-      if (
-        options.expectedMasterType &&
-        options.expectedMasterType !== worksheetType
-      ) {
-        throw createParserError(
-          "MASTER_TYPE_MISMATCH",
-          `El archivo corresponde a "${worksheetType}", no a "${options.expectedMasterType}".`,
-        );
-      }
+      const candidateTypes =
+        options.expectedMasterType
+          ? [options.expectedMasterType]
+          : Object.values(MASTER_TYPES);
+      const candidateConfigs = candidateTypes
+        .map((masterType) => ({
+          masterType,
+          config: getMasterFileConfig(
+            masterType,
+            worksheet.name,
+          ),
+        }))
+        .filter(({ config }) => {
+          const normalizedWorksheetName =
+            String(worksheet.name || "")
+              .trim()
+              .toLowerCase();
 
-      detectedMasterType = worksheetType;
-      sourceSheet = worksheet.name;
-      const config = getMasterFileConfig(
-        detectedMasterType,
-        worksheet.name,
-      );
+          return !(config.ignoredSheetNames || [])
+            .some(
+              (name) =>
+                String(name || "")
+                  .trim()
+                  .toLowerCase() ===
+                normalizedWorksheetName,
+            );
+        });
       let headers = [];
       let partNumberHeader = null;
 
       for await (const row of worksheet) {
-        if (row.number < config.headerRow) continue;
+        if (!partNumberHeader) {
+          if (row.number > headerScanLimit) break;
 
-        if (row.number === config.headerRow) {
-          headers = buildStreamingHeaders(row, config);
-          validateRequiredHeaders(headers, config);
-          partNumberHeader = findPartNumberHeader(headers, config);
+          let bestCandidate = null;
+
+          for (const candidateConfig of candidateConfigs) {
+            const candidateHeaders =
+              buildStreamingHeaders(
+                row,
+                candidateConfig.config,
+              );
+            const summary =
+              summarizeMasterHeaderCandidate(
+                candidateHeaders,
+                candidateConfig.config,
+              );
+
+            if (!summary.valid) continue;
+
+            const knownSheetName =
+              (candidateConfig.config.sheetNames || [])
+                .some(
+                  (name) =>
+                    String(name || "")
+                      .trim()
+                      .toLowerCase() ===
+                    String(worksheet.name || "")
+                      .trim()
+                      .toLowerCase(),
+                );
+            const score =
+              summary.score * 100 +
+              (knownSheetName ? 10 : 0);
+
+            if (
+              !bestCandidate ||
+              score > bestCandidate.score
+            ) {
+              bestCandidate = {
+                ...candidateConfig,
+                headers: candidateHeaders,
+                partNumberHeader:
+                  summary.partNumberHeader,
+                score,
+              };
+            }
+          }
+
+          if (!bestCandidate) continue;
+
+          detectedMasterType =
+            bestCandidate.masterType;
+          sourceSheet = worksheet.name;
+          detectedHeaderRow = row.number;
+          selectedConfig = {
+            ...bestCandidate.config,
+            headerRow: detectedHeaderRow,
+          };
+          headers = bestCandidate.headers;
+          partNumberHeader =
+            bestCandidate.partNumberHeader;
+
+          validateRequiredHeaders(
+            headers,
+            selectedConfig,
+          );
 
           if (!partNumberHeader) {
             throw createParserError(
@@ -199,14 +282,15 @@ const parseMasterFileStream = async (filePath, options = {}) => {
             getCanonicalMasterHeaders(
               detectedMasterType,
             );
-          partNumberColumn = "A";
+          partNumberColumn =
+            partNumberHeader.columnLetter;
 
           if (typeof options.onMetadata === "function") {
             await options.onMetadata({
               originalFileName: options.originalFileName || "",
               masterType: detectedMasterType,
               sourceSheet,
-              headerRow: config.headerRow,
+              headerRow: detectedHeaderRow,
               partNumberColumn,
               headers: publicHeaders,
               recordCount: 0,
@@ -221,8 +305,6 @@ const parseMasterFileStream = async (filePath, options = {}) => {
           metadataDelivered = true;
           continue;
         }
-
-        if (!partNumberHeader) continue;
 
         const result = parseStreamingDataRow(
           row,
@@ -240,7 +322,10 @@ const parseMasterFileStream = async (filePath, options = {}) => {
         }
 
         recordCount += 1;
-        if (config.allowDuplicatePartNumbers !== true) {
+        if (
+          selectedConfig
+            .allowDuplicatePartNumbers !== true
+        ) {
           const key = result.record.partNumberNormalized;
           const previousCount = partNumberCounts.get(key) || 0;
           partNumberCounts.set(key, previousCount + 1);
@@ -277,7 +362,7 @@ const parseMasterFileStream = async (filePath, options = {}) => {
   if (!sourceSheet || !metadataDelivered) {
     throw createParserError(
       "MASTER_TYPE_NOT_DETECTED",
-      "No se encontró una hoja FG_Catalog, RawMatlCat o BOMs.",
+      "No se encontro una fila de encabezados valida para el tipo de archivo madre seleccionado.",
     );
   }
 
@@ -310,10 +395,7 @@ const parseMasterFileStream = async (filePath, options = {}) => {
       originalFileName: options.originalFileName || "",
       masterType: detectedMasterType,
       sourceSheet,
-      headerRow: getMasterFileConfig(
-        detectedMasterType,
-        sourceSheet,
-      ).headerRow,
+      headerRow: detectedHeaderRow,
       partNumberColumn,
       headers: publicHeaders,
       recordCount,

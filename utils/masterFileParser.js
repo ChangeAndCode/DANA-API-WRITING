@@ -19,8 +19,8 @@ const {
 } = require("../data/countryCatalog");
 
 const {
+  MASTER_TYPES,
   getMasterFileConfig,
-  detectMasterTypeBySheetNames,
   normalizeMasterHeader,
   getCanonicalMasterHeaders,
 } = require("../data/masterFileRegistry");
@@ -30,6 +30,7 @@ const {
 } = require("./masterFileCanonical");
 
 const HTS_FORMATTED_RE = /^\d{4}\.\d{2}\.\d{4}$/;
+const DEFAULT_MASTER_HEADER_SCAN_LIMIT = 25;
 
 /**
  * Crea errores identificables para que posteriormente el
@@ -350,23 +351,6 @@ const isSuspiciousPartNumber = (partNumber) => {
 };
 
 /**
- * Busca una hoja ignorando diferencias de mayúsculas.
- */
-const findWorksheet = (workbook, expectedNames = []) => {
-  const normalizedExpected = expectedNames.map((name) =>
-    String(name || "").trim().toLowerCase(),
-  );
-
-  return (
-    workbook.worksheets.find((worksheet) =>
-      normalizedExpected.includes(
-        worksheet.name.trim().toLowerCase(),
-      ),
-    ) || null
-  );
-};
-
-/**
  * Revisa si una columna tiene algún valor debajo de los
  * encabezados. Se utiliza para conservar columnas sin nombre.
  */
@@ -424,12 +408,24 @@ const resolveHeaderRule = (
 const buildHeaders = (
   worksheet,
   config,
+  options = {},
 ) => {
+  const requestedHeaderRow = Number.parseInt(
+    options.headerRow,
+    10,
+  );
+  const headerRowNumber =
+    Number.isInteger(requestedHeaderRow) &&
+    requestedHeaderRow > 0
+      ? requestedHeaderRow
+      : config.headerRow;
+  const preserveUnnamedColumns =
+    options.preserveUnnamedColumns !== false;
   const headerRow = worksheet.getRow(
-    config.headerRow,
+    headerRowNumber,
   );
 
-  const firstDataRow = config.headerRow + 1;
+  const firstDataRow = headerRowNumber + 1;
   const headers = [];
 
   for (
@@ -447,13 +443,18 @@ const buildHeaders = (
     const originalHeader =
       toCleanText(originalHeaderValue);
 
-    const hasData = columnHasData(
-      worksheet,
-      columnIndex,
-      firstDataRow,
-    );
+    const hasData = preserveUnnamedColumns
+      ? columnHasData(
+          worksheet,
+          columnIndex,
+          firstDataRow,
+        )
+      : false;
 
-    if (!originalHeader && !hasData) {
+    if (
+      !originalHeader &&
+      (!preserveUnnamedColumns || !hasData)
+    ) {
       continue;
     }
 
@@ -546,12 +547,203 @@ const findPartNumberHeader = (
   config,
 ) => {
   return (
+    headers.find(
+      (header) =>
+        header.ignored !== true &&
+        header.mappedField === "partNumber",
+    ) ||
     headers.find((header) =>
       config.partNumberHeaderKeys.includes(
         header.normalizedName,
       ),
     ) || null
   );
+};
+
+/**
+ * Evalua si una fila contiene todos los encabezados indispensables
+ * para un tipo de archivo madre.
+ */
+const summarizeMasterHeaderCandidate = (
+  headers,
+  config,
+) => {
+  const mappedFields = new Set(
+    headers
+      .filter((header) => header.ignored !== true)
+      .map((header) => header.mappedField)
+      .filter(Boolean),
+  );
+  const requiredMappedFields = Array.isArray(
+    config.requiredMappedFields,
+  )
+    ? config.requiredMappedFields
+    : [];
+  const missingMappedFields =
+    requiredMappedFields.filter(
+      (field) => !mappedFields.has(field),
+    );
+  const partNumberHeader =
+    findPartNumberHeader(headers, config);
+
+  return {
+    valid:
+      Boolean(partNumberHeader) &&
+      missingMappedFields.length === 0,
+    score: mappedFields.size,
+    mappedFields,
+    missingMappedFields,
+    partNumberHeader,
+  };
+};
+
+/**
+ * Busca la mejor fila de encabezados en las primeras filas de una hoja.
+ * La posicion de la hoja y de las columnas no forma parte de la validacion.
+ */
+const findMasterHeaderRow = (
+  worksheet,
+  config,
+  scanLimit = DEFAULT_MASTER_HEADER_SCAN_LIMIT,
+) => {
+  const parsedLimit = Number.parseInt(scanLimit, 10);
+  const maxRows = Number.isInteger(parsedLimit) && parsedLimit > 0
+    ? parsedLimit
+    : DEFAULT_MASTER_HEADER_SCAN_LIMIT;
+  const lastRow = Math.min(
+    Number(worksheet.rowCount) || 0,
+    maxRows,
+  );
+  let bestCandidate = null;
+
+  for (
+    let rowNumber = 1;
+    rowNumber <= lastRow;
+    rowNumber += 1
+  ) {
+    const headers = buildHeaders(
+      worksheet,
+      config,
+      {
+        headerRow: rowNumber,
+        preserveUnnamedColumns: false,
+      },
+    );
+    const summary =
+      summarizeMasterHeaderCandidate(
+        headers,
+        config,
+      );
+
+    if (!summary.valid) continue;
+
+    if (
+      !bestCandidate ||
+      summary.score > bestCandidate.score
+    ) {
+      bestCandidate = {
+        headerRow: rowNumber,
+        headers,
+        ...summary,
+      };
+    }
+  }
+
+  return bestCandidate;
+};
+
+const isIgnoredMasterWorksheet = (
+  worksheet,
+  config,
+) => {
+  const normalizedName = String(
+    worksheet?.name || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  return (config.ignoredSheetNames || []).some(
+    (name) =>
+      String(name || "").trim().toLowerCase() ===
+      normalizedName,
+  );
+};
+
+/**
+ * Detecta el tipo, la hoja y la fila de encabezados por su contenido.
+ * Cuando el administrador selecciona un tipo, solo se buscan cabeceras
+ * compatibles con ese tipo.
+ */
+const findMasterSourceByHeaders = (
+  workbook,
+  options = {},
+) => {
+  const expectedMasterType =
+    options.expectedMasterType || "";
+  const masterTypes = expectedMasterType
+    ? [expectedMasterType]
+    : Object.values(MASTER_TYPES);
+  let bestSource = null;
+
+  for (const worksheet of workbook.worksheets) {
+    for (const masterType of masterTypes) {
+      const baseConfig = getMasterFileConfig(
+        masterType,
+        worksheet.name,
+      );
+
+      if (
+        isIgnoredMasterWorksheet(
+          worksheet,
+          baseConfig,
+        )
+      ) {
+        continue;
+      }
+
+      const candidate = findMasterHeaderRow(
+        worksheet,
+        baseConfig,
+        options.headerScanLimit,
+      );
+
+      if (!candidate) continue;
+
+      const knownSheetName =
+        (baseConfig.sheetNames || []).some(
+          (name) =>
+            String(name || "")
+              .trim()
+              .toLowerCase() ===
+            String(worksheet.name || "")
+              .trim()
+              .toLowerCase(),
+        );
+      const sourceScore =
+        candidate.score * 100 +
+        (knownSheetName ? 10 : 0);
+
+      if (
+        !bestSource ||
+        sourceScore > bestSource.sourceScore
+      ) {
+        bestSource = {
+          masterType,
+          worksheet,
+          config: {
+            ...baseConfig,
+            headerRow: candidate.headerRow,
+          },
+          headers: candidate.headers,
+          partNumberHeader:
+            candidate.partNumberHeader,
+          sourceScore,
+        };
+      }
+    }
+  }
+
+  return bestSource;
 };
 
 /**
@@ -1396,68 +1588,35 @@ const parseMasterFileBuffer = async (
     );
   }
 
-  const sheetNames =
-    workbook.worksheets.map(
-      (worksheet) => worksheet.name,
-    );
+  const source = findMasterSourceByHeaders(
+    workbook,
+    {
+      expectedMasterType:
+        options.expectedMasterType,
+      headerScanLimit:
+        options.headerScanLimit,
+    },
+  );
 
-  const detectedMasterType =
-    detectMasterTypeBySheetNames(sheetNames);
-
-  if (!detectedMasterType) {
+  if (!source) {
     throw createParserError(
       "MASTER_TYPE_NOT_DETECTED",
-      "No se encontró una hoja FG_Catalog o RawMatlCat.",
+      "No se encontro una fila de encabezados valida para el tipo de archivo madre seleccionado.",
     );
   }
 
-  if (
-    options.expectedMasterType &&
-    options.expectedMasterType !==
-      detectedMasterType
-  ) {
-    throw createParserError(
-      "MASTER_TYPE_MISMATCH",
-      `El archivo corresponde a "${detectedMasterType}", no a "${options.expectedMasterType}".`,
-    );
-  }
-
-  let config = getMasterFileConfig(
-    detectedMasterType,
-  );
-
-  const worksheet = findWorksheet(
-    workbook,
-    config.sheetNames,
-  );
-
-  if (!worksheet) {
-    throw createParserError(
-      "MASTER_SOURCE_SHEET_NOT_FOUND",
-      "No se encontró la hoja principal del archivo madre.",
-    );
-  }
-
-  config = getMasterFileConfig(
-    detectedMasterType,
-    worksheet.name,
-  );
-
-  const headers = buildHeaders(
+  const {
+    masterType: detectedMasterType,
     worksheet,
     config,
-  );
+    headers,
+    partNumberHeader,
+  } = source;
 
   validateRequiredHeaders(
     headers,
     config,
   );
-
-  const partNumberHeader =
-    findPartNumberHeader(
-      headers,
-      config,
-    );
 
   if (!partNumberHeader) {
     throw createParserError(
@@ -1552,7 +1711,8 @@ const parseMasterFileBuffer = async (
       masterType: detectedMasterType,
       sourceSheet: worksheet.name,
       headerRow: config.headerRow,
-      partNumberColumn: "A",
+      partNumberColumn:
+        partNumberHeader.columnLetter,
       headers: publicHeaders,
       recordCount: records.length,
       imageCountIgnored,
@@ -1575,7 +1735,11 @@ module.exports = {
   getCellValue,
   toCleanText,
   resolveHeaderRule,
+  buildHeaders,
   validateRequiredHeaders,
   findPartNumberHeader,
+  summarizeMasterHeaderCandidate,
+  findMasterHeaderRow,
+  findMasterSourceByHeaders,
   parseDataRow,
 };
