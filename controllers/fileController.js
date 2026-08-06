@@ -22,6 +22,7 @@ const { convertXlsToXlsx } = require("../utils/xlsConverter");
 const masterFileService = require(
   "../services/masterFileService",
 );
+const siteSftpService = require("../services/siteSftpService");
 const { VALID_SITES } = require("../data/siteConfig");
 
 // Middleware de Multer (configúralo una vez)
@@ -225,6 +226,167 @@ const getAdminFileDocumentOrThrow = async ({
 
   assertUserCanAccessAdminFile(doc, user);
   return { model, doc };
+};
+
+const SFTP_IN_PROGRESS_STATUSES = ["pending", "sending"];
+const DEFAULT_SFTP_LOCK_TIMEOUT_MS = 15 * 60 * 1000;
+const MAX_STORED_SFTP_ERROR_LENGTH = 500;
+
+const getSftpLockTimeoutMs = () => {
+  const configured = Number.parseInt(process.env.SFTP_LOCK_TIMEOUT_MS, 10);
+  return Number.isInteger(configured) && configured > 0
+    ? configured
+    : DEFAULT_SFTP_LOCK_TIMEOUT_MS;
+};
+
+const normalizeSftpSite = (value) =>
+  String(value || "").trim().toLowerCase();
+
+const resolveSftpTargetSite = ({ user, documentSite, requestedSite }) => {
+  const requested = normalizeSftpSite(requestedSite);
+
+  if (!VALID_USER_SITES.includes(requested)) {
+    throw createHttpError(400, "Debes seleccionar una sede SFTP valida.", {
+      code: "SFTP_SITE_REQUIRED",
+    });
+  }
+
+  if (isAdminUser(user)) return requested;
+
+  const assignedSite =
+    getScopedUserSite(user) || normalizeSftpSite(documentSite);
+  if (!VALID_USER_SITES.includes(assignedSite)) {
+    throw createHttpError(403, "No tienes una sede asignada para enviar.", {
+      code: "SFTP_USER_SITE_REQUIRED",
+    });
+  }
+  if (requested !== assignedSite) {
+    throw createHttpError(403, "No puedes enviar archivos a otra sede.", {
+      code: "SFTP_SITE_ACCESS_DENIED",
+    });
+  }
+
+  return assignedSite;
+};
+
+const toPlainObject = (value) => {
+  if (!value) return {};
+  return typeof value.toObject === "function" ? value.toObject() : { ...value };
+};
+
+const toPublicSftpDelivery = (value) => {
+  const delivery = toPlainObject(value);
+  return {
+    status: delivery.status || "not_sent",
+    site: delivery.site || "",
+    attempts: Number(delivery.attempts) || 0,
+    lastAttemptAt: delivery.lastAttemptAt || null,
+    sentAt: delivery.sentAt || null,
+    lastAttemptBy: delivery.lastAttemptBy || null,
+    lastError: delivery.lastError || "",
+    remoteFileName: delivery.remoteFileName || "",
+    lastDryRunAt: delivery.lastDryRunAt || null,
+    lastDryRunSite: delivery.lastDryRunSite || "",
+    lastDryRunBy: delivery.lastDryRunBy || null,
+    lastDryRunSucceeded:
+      typeof delivery.lastDryRunSucceeded === "boolean"
+        ? delivery.lastDryRunSucceeded
+        : null,
+    lastDryRunError: delivery.lastDryRunError || "",
+  };
+};
+
+const toPublicAdminFileDocument = (value) => {
+  const document = toPlainObject(value);
+  return {
+    ...document,
+    sftpDelivery: toPublicSftpDelivery(document.sftpDelivery),
+  };
+};
+
+const getSftpDocumentSummary = async (model, id) => {
+  const document = await model
+    .findById(id)
+    .select(
+      "adminFileName lastDownloadedName site createdBy updatedBy createdAt updatedAt sftpDelivery",
+    )
+    .populate("createdBy", "displayName email")
+    .populate("updatedBy", "displayName email")
+    .populate("sftpDelivery.lastAttemptBy", "displayName email")
+    .populate("sftpDelivery.lastDryRunBy", "displayName email")
+    .lean();
+
+  return document ? toPublicAdminFileDocument(document) : null;
+};
+
+const isSftpOperationInProgress = (document) => {
+  const delivery = toPlainObject(document?.sftpDelivery);
+  if (!SFTP_IN_PROGRESS_STATUSES.includes(delivery.status)) return false;
+
+  const lastAttemptAt = new Date(delivery.lastAttemptAt || 0).getTime();
+  return (
+    Number.isFinite(lastAttemptAt) &&
+    Date.now() - lastAttemptAt < getSftpLockTimeoutMs()
+  );
+};
+
+const sanitizeStoredSftpError = (value) =>
+  String(value || "No se pudo completar la operacion SFTP.")
+    .trim()
+    .slice(0, MAX_STORED_SFTP_ERROR_LENGTH);
+
+const prepareAdminFileForSftp = async (document, documentType) => {
+  const rows = Array.isArray(document.rows) ? document.rows : [];
+  if (!rows.length) {
+    throw createHttpError(409, "No hay filas para enviar.", {
+      code: "ADMIN_FILE_EMPTY",
+    });
+  }
+
+  const result = await fileConversionService.processManualDataForConversion(
+    rows,
+    null,
+    { documentType },
+  );
+
+  if (result.status !== "completed" || !result.convertedFilePath) {
+    throw createHttpError(
+      409,
+      "No se pudo generar un archivo valido para enviar.",
+      { code: "ADMIN_FILE_EXPORT_FAILED" },
+    );
+  }
+
+  let fallbackName = "finishedProduct.txt";
+  if (documentType === "rawMaterial") fallbackName = "rawMaterial.txt";
+  if (documentType === "billOfMaterials") {
+    fallbackName = "billOfMaterials.txt";
+  }
+  if (documentType === "splScrap") fallbackName = "splScrap.csv";
+
+  return {
+    localPath: result.convertedFilePath,
+    fileName: siteSftpService.sanitizeRemoteFileName(
+      document.lastDownloadedName || result.outputFileName || fallbackName,
+    ),
+  };
+};
+
+const markSftpOperationFailed = async ({
+  model,
+  id,
+  message,
+}) => {
+  await model.updateOne(
+    { _id: id },
+    {
+      $set: {
+        "sftpDelivery.status": "failed",
+        "sftpDelivery.lastError": sanitizeStoredSftpError(message),
+      },
+    },
+    { timestamps: false },
+  );
 };
 
 const cloneAdminFileRows = (rows) => {
@@ -968,7 +1130,7 @@ const getAdminFilesByType = async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
 
     const selectFields =
-      "adminFileName lastDownloadedName site createdBy updatedBy createdAt updatedAt";
+      "adminFileName lastDownloadedName site createdBy updatedBy createdAt updatedAt sftpDelivery";
     const docs = await model
       .find(query)
       .sort({ updatedAt: -1, createdAt: -1 })
@@ -976,9 +1138,13 @@ const getAdminFilesByType = async (req, res) => {
       .select(selectFields)
       .populate("createdBy", "displayName email")
       .populate("updatedBy", "displayName email")
+      .populate("sftpDelivery.lastAttemptBy", "displayName email")
+      .populate("sftpDelivery.lastDryRunBy", "displayName email")
       .lean();
 
-    return res.status(200).json({ documents: docs });
+    return res.status(200).json({
+      documents: docs.map(toPublicAdminFileDocument),
+    });
   } catch (error) {
     console.error("Error al listar archivos admin:", error);
     return res.status(error.statusCode || 500).json({
@@ -1003,7 +1169,9 @@ const getAdminFileById = async (req, res) => {
       lean: true,
     });
 
-    return res.status(200).json({ document: doc });
+    return res.status(200).json({
+      document: toPublicAdminFileDocument(doc),
+    });
   } catch (error) {
     console.error("Error al obtener archivo admin:", error);
     return res.status(error.statusCode || 500).json({
@@ -1076,6 +1244,387 @@ const downloadAdminFileById = async (req, res) => {
           ? error.message
           : "Error interno al descargar el archivo.",
       code: error.code,
+    });
+  }
+};
+
+const sendAdminFileViaSftp = async (req, res) => {
+  const { id } = req.params;
+  const { type } = req.query || {};
+  const { site, dryRun } = req.body || {};
+  const isDryRun = dryRun === true || dryRun === "true";
+  let model;
+  let document;
+  let targetSite = "";
+
+  try {
+    ({ model, doc: document } = await getAdminFileDocumentOrThrow({
+      id,
+      type,
+      user: req.user,
+    }));
+
+    targetSite = resolveSftpTargetSite({
+      user: req.user,
+      documentSite: document.site,
+      requestedSite: site,
+    });
+
+    const configuration =
+      siteSftpService.validateSiteConfiguration(targetSite);
+    if (!configuration.valid) {
+      return res.status(503).json({
+        message: "La configuracion SFTP de la sede esta incompleta.",
+        code: "SFTP_CONFIGURATION_INCOMPLETE",
+        dryRun: isDryRun,
+        document: await getSftpDocumentSummary(model, id),
+      });
+    }
+
+    if (isSftpOperationInProgress(document)) {
+      return res.status(409).json({
+        message: "El archivo ya tiene un envio SFTP en proceso.",
+        code: "SFTP_ALREADY_IN_PROGRESS",
+        dryRun: isDryRun,
+        document: await getSftpDocumentSummary(model, id),
+      });
+    }
+
+    const userId = req.user?.id || req.user?._id;
+    const attemptDate = new Date();
+
+    if (isDryRun) {
+      let simulation;
+      try {
+        simulation = await siteSftpService.testSiteConnection(targetSite);
+      } catch (error) {
+        const publicError = siteSftpService.sanitizeSftpError(error);
+
+        try {
+          await model.updateOne(
+            { _id: id },
+            {
+              $set: {
+                "sftpDelivery.lastDryRunAt": attemptDate,
+                "sftpDelivery.lastDryRunBy": userId,
+                "sftpDelivery.lastDryRunSite": targetSite,
+                "sftpDelivery.lastDryRunSucceeded": false,
+                "sftpDelivery.lastDryRunError": sanitizeStoredSftpError(
+                  publicError.message,
+                ),
+              },
+            },
+            { timestamps: false },
+          );
+        } catch {
+          console.error("[SFTP] No se guardo la simulacion fallida.", {
+            documentId: String(id),
+            documentType: type,
+            site: targetSite,
+            code: "SFTP_AUDIT_PERSIST_FAILED",
+          });
+        }
+
+        console.warn("[SFTP] Simulacion fallida.", {
+          documentId: String(id),
+          documentType: type,
+          site: targetSite,
+          code: publicError.code,
+        });
+
+        let failedDocument = null;
+        try {
+          failedDocument = await getSftpDocumentSummary(model, id);
+        } catch {
+          // The connection result remains the primary error.
+        }
+
+        return res.status(502).json({
+          message: publicError.message,
+          code: publicError.code,
+          dryRun: true,
+          document: failedDocument,
+        });
+      }
+
+      await model.updateOne(
+        { _id: id },
+        {
+          $set: {
+            "sftpDelivery.lastDryRunAt": attemptDate,
+            "sftpDelivery.lastDryRunBy": userId,
+            "sftpDelivery.lastDryRunSite": targetSite,
+            "sftpDelivery.lastDryRunSucceeded": true,
+            "sftpDelivery.lastDryRunError": "",
+          },
+        },
+        { timestamps: false },
+      );
+
+      console.info("[SFTP] Simulacion completada.", {
+        documentId: String(id),
+        documentType: type,
+        site: targetSite,
+      });
+
+      let simulatedDocument = null;
+      try {
+        simulatedDocument = await getSftpDocumentSummary(model, id);
+      } catch {
+        console.warn("[SFTP] No se pudo recargar la simulacion.", {
+          documentId: String(id),
+          documentType: type,
+          site: targetSite,
+          code: "SFTP_AUDIT_READ_FAILED",
+        });
+      }
+
+      return res.status(200).json({
+        message: "Simulacion SFTP completada correctamente.",
+        dryRun: true,
+        remoteDirectoryExists: simulation.remoteDirectoryExists,
+        connectionAttempts: simulation.connectionAttempts,
+        document: simulatedDocument,
+      });
+    }
+
+    if (!Array.isArray(document.rows) || !document.rows.length) {
+      return res.status(409).json({
+        message: "No hay filas para enviar.",
+        code: "ADMIN_FILE_EMPTY",
+        dryRun: false,
+        document: await getSftpDocumentSummary(model, id),
+      });
+    }
+
+    const staleBefore = new Date(Date.now() - getSftpLockTimeoutMs());
+    const lockedDocument = await model.findOneAndUpdate(
+      {
+        _id: id,
+        $or: [
+          {
+            "sftpDelivery.status": {
+              $nin: SFTP_IN_PROGRESS_STATUSES,
+            },
+          },
+          {
+            "sftpDelivery.lastAttemptAt": {
+              $exists: false,
+            },
+          },
+          {
+            "sftpDelivery.lastAttemptAt": {
+              $lt: staleBefore,
+            },
+          },
+        ],
+      },
+      {
+        $set: {
+          "sftpDelivery.status": "pending",
+          "sftpDelivery.site": targetSite,
+          "sftpDelivery.lastAttemptAt": attemptDate,
+          "sftpDelivery.lastAttemptBy": userId,
+          "sftpDelivery.lastError": "",
+          "sftpDelivery.sentAt": null,
+          "sftpDelivery.remoteFileName": null,
+          "sftpDelivery.remotePath": null,
+        },
+        $inc: {
+          "sftpDelivery.attempts": 1,
+        },
+      },
+      {
+        new: true,
+        timestamps: false,
+      },
+    );
+
+    if (!lockedDocument) {
+      return res.status(409).json({
+        message: "El archivo ya tiene un envio SFTP en proceso.",
+        code: "SFTP_ALREADY_IN_PROGRESS",
+        dryRun: false,
+        document: await getSftpDocumentSummary(model, id),
+      });
+    }
+
+    let preparedFile;
+    try {
+      preparedFile = await prepareAdminFileForSftp(
+        lockedDocument,
+        type,
+      );
+    } catch (error) {
+      const statusCode = error.statusCode || 500;
+      const publicMessage =
+        statusCode < 500
+          ? error.message
+          : "No se pudo generar el archivo para enviar.";
+
+      await markSftpOperationFailed({
+        model,
+        id,
+        message: publicMessage,
+      });
+
+      console.warn("[SFTP] No se genero el archivo.", {
+        documentId: String(id),
+        documentType: type,
+        site: targetSite,
+        code: error.code || "ADMIN_FILE_EXPORT_FAILED",
+      });
+
+      return res.status(statusCode).json({
+        message: publicMessage,
+        code: error.code || "ADMIN_FILE_EXPORT_FAILED",
+        dryRun: false,
+        document: await getSftpDocumentSummary(model, id),
+      });
+    }
+
+    const transition = await model.updateOne(
+      {
+        _id: id,
+        "sftpDelivery.status": "pending",
+      },
+      {
+        $set: {
+          "sftpDelivery.status": "sending",
+        },
+      },
+      { timestamps: false },
+    );
+
+    if (!transition.modifiedCount) {
+      return res.status(409).json({
+        message: "El estado del envio cambio antes de transferir el archivo.",
+        code: "SFTP_STATUS_CONFLICT",
+        dryRun: false,
+        document: await getSftpDocumentSummary(model, id),
+      });
+    }
+
+    let uploadResult;
+    try {
+      uploadResult = await siteSftpService.uploadFileForSite({
+        site: targetSite,
+        localPath: preparedFile.localPath,
+        fileName: preparedFile.fileName,
+      });
+    } catch (error) {
+      const publicError = siteSftpService.sanitizeSftpError(error);
+
+      await markSftpOperationFailed({
+        model,
+        id,
+        message: publicError.message,
+      });
+
+      console.warn("[SFTP] Envio fallido.", {
+        documentId: String(id),
+        documentType: type,
+        site: targetSite,
+        code: publicError.code,
+      });
+
+      return res.status(502).json({
+        message: publicError.message,
+        code: publicError.code,
+        dryRun: false,
+        document: await getSftpDocumentSummary(model, id),
+      });
+    }
+
+    const sentAt = new Date();
+    const sentDelivery = {
+      status: "sent",
+      site: targetSite,
+      attempts:
+        Number(toPlainObject(lockedDocument.sftpDelivery).attempts) || 1,
+      lastAttemptAt: attemptDate,
+      sentAt,
+      lastAttemptBy: userId,
+      lastError: "",
+      remoteFileName: uploadResult.remoteFileName,
+    };
+
+    try {
+      await model.updateOne(
+        { _id: id },
+        {
+          $set: {
+            "sftpDelivery.status": "sent",
+            "sftpDelivery.site": targetSite,
+            "sftpDelivery.sentAt": sentAt,
+            "sftpDelivery.lastError": "",
+            "sftpDelivery.remoteFileName": uploadResult.remoteFileName,
+            "sftpDelivery.remotePath": uploadResult.remotePath,
+          },
+        },
+        { timestamps: false },
+      );
+    } catch (error) {
+      console.error("[SFTP] El archivo fue transferido sin guardar auditoria.", {
+        documentId: String(id),
+        documentType: type,
+        site: targetSite,
+        code: "SFTP_AUDIT_PERSIST_FAILED",
+      });
+
+      return res.status(500).json({
+        message:
+          "El archivo fue transferido, pero no se pudo guardar su estado. No lo reintentes hasta revisar la auditoria.",
+        code: "SFTP_AUDIT_PERSIST_FAILED",
+        dryRun: false,
+        transferCompleted: true,
+        sftpDelivery: sentDelivery,
+      });
+    }
+
+    console.info("[SFTP] Archivo enviado.", {
+      documentId: String(id),
+      documentType: type,
+      site: targetSite,
+    });
+
+    let responseDocument = null;
+    try {
+      responseDocument = await getSftpDocumentSummary(model, id);
+    } catch {
+      console.warn("[SFTP] No se pudo recargar la auditoria enviada.", {
+        documentId: String(id),
+        documentType: type,
+        site: targetSite,
+        code: "SFTP_AUDIT_READ_FAILED",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Archivo enviado por SFTP correctamente.",
+      dryRun: false,
+      connectionAttempts: uploadResult.connectionAttempts,
+      sftpDelivery: sentDelivery,
+      document: responseDocument,
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    const publicMessage =
+      statusCode < 500
+        ? error.message
+        : "Error interno al procesar el envio SFTP.";
+
+    console.warn("[SFTP] Solicitud rechazada.", {
+      documentId: String(id || ""),
+      documentType: type || "",
+      site: targetSite || "",
+      code: error.code || "SFTP_REQUEST_FAILED",
+    });
+
+    return res.status(statusCode).json({
+      message: publicMessage,
+      code: error.code || "SFTP_REQUEST_FAILED",
+      dryRun: isDryRun,
     });
   }
 };
@@ -1166,6 +1715,13 @@ const updateAdminFileById = async (req, res) => {
       user: req.user,
     });
 
+    if (isSftpOperationInProgress(doc)) {
+      return res.status(409).json({
+        message: "No puedes actualizar el archivo durante un envio SFTP.",
+        code: "SFTP_ALREADY_IN_PROGRESS",
+      });
+    }
+
     const validationResult = await fileConversionService.validateManualRowsForDocument(
       rows,
       type,
@@ -1210,6 +1766,15 @@ const updateAdminFileById = async (req, res) => {
     doc.lastDownloadedName = generateAdminFileNomenclature(type, doc.rows);
     doc.markModified("rows");
     doc.updatedBy = req.user.id;
+    if (!doc.sftpDelivery) {
+      doc.sftpDelivery = {};
+    }
+    doc.sftpDelivery.status = "not_sent";
+    doc.sftpDelivery.site = scopedSite;
+    doc.sftpDelivery.sentAt = undefined;
+    doc.sftpDelivery.lastError = "";
+    doc.sftpDelivery.remoteFileName = undefined;
+    doc.sftpDelivery.remotePath = undefined;
 
     await doc.save();
 
@@ -1234,11 +1799,18 @@ const deleteAdminFileById = async (req, res) => {
   const { type } = req.query || {};
 
   try {
-    const { model } = await getAdminFileDocumentOrThrow({
+    const { model, doc } = await getAdminFileDocumentOrThrow({
       id,
       type,
       user: req.user,
     });
+
+    if (isSftpOperationInProgress(doc)) {
+      return res.status(409).json({
+        message: "No puedes eliminar el archivo durante un envio SFTP.",
+        code: "SFTP_ALREADY_IN_PROGRESS",
+      });
+    }
 
     await model.deleteOne({ _id: id });
     return res.status(200).json({ message: "Archivo eliminado." });
@@ -1265,6 +1837,7 @@ module.exports = {
   getAdminFilesByType,
   getAdminFileById,
   downloadAdminFileById,
+  sendAdminFileViaSftp,
   copyAdminFileById,
   updateAdminFileById,
   deleteAdminFileById,

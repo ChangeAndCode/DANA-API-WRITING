@@ -4,7 +4,7 @@
   "description": "Minimal API for file conversion between xls ,xlsx ,csv and txt for specific file templates",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test test/sftpBackend.test.js",
     "dev:backend": "node index.js",
     "dev:backend:test": "node index.js",
     "build": "npm install --include=dev && node esbuild.config.js build",

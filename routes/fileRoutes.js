@@ -59,6 +59,11 @@ router.post(
   API_PROTECTED,
   fileController.copyAdminFileById,
 );
+router.post(
+  '/admin-files/:id/sftp',
+  API_PROTECTED,
+  fileController.sendAdminFileViaSftp,
+);
 router.delete(
   '/admin-files/:id',
   API_PROTECTED,

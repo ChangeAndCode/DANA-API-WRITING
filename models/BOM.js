@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { sftpDeliverySchema } = require("./sftpDeliverySchema");
 
 // Helper function to create schema fields from your spec
 const ALLOW_EMPTY_MANDATORY_FIELDS =
@@ -176,6 +177,7 @@ billOfMaterialsMongooseSchema.add({
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   sourceJobId: { type: mongoose.Schema.Types.ObjectId, ref: "ConversionJob" },
   rows: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  sftpDelivery: { type: sftpDeliverySchema, default: () => ({}) },
 });
 
 billOfMaterialsMongooseSchema.statics.getSchemaSpec = () =>

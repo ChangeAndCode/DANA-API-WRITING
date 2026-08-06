@@ -83,6 +83,17 @@ function isTransientEndError(err) {
   return err.code === "ECONNRESET" || /ECONNRESET|Socket closed/i.test(msg);
 }
 
+function getSafeErrorCode(error) {
+  const code = String(error?.code || "SFTP_ERROR").toUpperCase();
+  return /^[A-Z0-9_]+$/.test(code) ? code : "SFTP_ERROR";
+}
+
+function createSafeSftpError(message, error) {
+  const safeError = new Error(message);
+  safeError.code = getSafeErrorCode(error);
+  return safeError;
+}
+
 /**
  * Sube múltiples archivos en una sola conexión SFTP.
  * @param {Array<{local:string, remote:string}>} files
@@ -97,18 +108,18 @@ async function uploadFilesViaSftp(files) {
   let connectDone = false;
 
   try {
-    console.log(
-      `[SFTP Service] Connecting to SFTP server: ${sftpConfig.host}:${sftpConfig.port}...`,
-    );
+    console.log("[SFTP Service] Connecting.");
 
     // Manejo de errores del cliente (antes de conectar)
     sftp.on("error", (err) => {
       if (allPutsCompleted && isTransientEndError(err)) {
         console.warn(
-          `[SFTP Service] Transient SFTP error post-transfer (ignorado): ${err.message}`,
+          "[SFTP Service] Transient post-transfer error ignored.",
         );
       } else {
-        console.error(`[SFTP Service] SFTP client error:`, err);
+        console.error("[SFTP Service] Client error.", {
+          code: getSafeErrorCode(err),
+        });
       }
     });
 
@@ -129,9 +140,7 @@ async function uploadFilesViaSftp(files) {
 
     await sftp.connect(sftpConfig);
     connectDone = true;
-    console.log(
-      `[SFTP Service] Connected. Uploading ${files.length} file(s)...`,
-    );
+    console.log("[SFTP Service] Connected. Uploading " + files.length + " file(s).");
 
     for (const f of files) {
       const local = f.local;
@@ -144,21 +153,21 @@ async function uploadFilesViaSftp(files) {
       const finalRemote = await ensureUniqueRemotePath(sftp, remote);
 
       if (finalRemote !== remote) {
-        console.log(
-          `[SFTP Service] Remote exists. Using unique name: ${finalRemote}`,
-        );
+        console.log("[SFTP Service] Using a unique remote name.");
       }
 
       await sftp.put(local, finalRemote);
-      console.log(`[SFTP Service] Uploaded ${local} -> ${finalRemote}`);
+      console.log("[SFTP Service] File uploaded.");
       results.push({ local, remote: finalRemote });
     }
 
     allPutsCompleted = true;
   } catch (err) {
     // Error real durante uploads o connect
-    console.error(`[SFTP Service] Batch upload failed:`, err);
-    throw new Error(`SFTP batch upload failed: ${err.message}`);
+    console.error("[SFTP Service] Batch upload failed.", {
+      code: getSafeErrorCode(err),
+    });
+    throw createSafeSftpError("SFTP batch upload failed.", err);
   } finally {
     // Cerrar sesión con cuidado: no fallar si el server ya cortó
     if (connectDone) {
@@ -167,11 +176,11 @@ async function uploadFilesViaSftp(files) {
       } catch (e) {
         if (allPutsCompleted && isTransientEndError(e)) {
           console.warn(
-            `[SFTP Service] Ignoring end() error post-transfer: ${e.message}`,
+            "[SFTP Service] Post-transfer close error ignored.",
           );
         } else {
           // si falló antes de terminar puts o es otro error, sí propagamos
-          throw e;
+          throw createSafeSftpError("SFTP session close failed.", e);
         }
       }
     }
@@ -193,19 +202,16 @@ async function deleteRemoteFile(remotePath) {
     connected = true;
     const exists = await safeExists(sftp, remotePath);
     if (!exists) {
-      console.log(
-        `[SFTP Service] deleteRemoteFile: ${remotePath} no existe, nada que borrar.`,
-      );
+      console.log("[SFTP Service] Remote file does not exist.");
       return false;
     }
     await sftp.delete(remotePath);
-    console.log(`[SFTP Service] deleteRemoteFile: eliminado ${remotePath}`);
+    console.log("[SFTP Service] Remote file deleted.");
     return true;
   } catch (err) {
-    console.error(
-      `[SFTP Service] deleteRemoteFile: error al borrar ${remotePath}:`,
-      err.message || err,
-    );
+    console.error("[SFTP Service] Remote delete failed.", {
+      code: getSafeErrorCode(err),
+    });
     return false;
   } finally {
     if (connected) {
