@@ -79,6 +79,50 @@ body {
   background: #dc3545 !important;
 }
 
+.sftp-btn {
+  color: #111;
+  background: #facc15 !important;
+  border: none;
+}
+
+.sftp-btn:hover,
+.sftp-btn:focus {
+  background: #eab308 !important;
+}
+
+#adminFilesTable td.sftp-status-cell {
+  text-align: center;
+}
+
+.sftp-status-indicator {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  vertical-align: middle;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
+}
+
+.sftp-status-not-sent {
+  background: #9ca3af;
+}
+
+.sftp-status-pending {
+  background: #facc15;
+}
+
+.sftp-status-sending {
+  background: #3b82f6;
+}
+
+.sftp-status-sent {
+  background: #22c55e;
+}
+
+.sftp-status-failed {
+  background: #ef4444;
+}
+
 .admin-action-btn:hover,
 .admin-action-btn:focus {
   font-weight: 600;

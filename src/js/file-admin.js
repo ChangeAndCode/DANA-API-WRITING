@@ -30,6 +30,36 @@
     gaiim: "GAIIM",
     p1a: "P1A",
   };
+  const SFTP_STATUS_META = {
+    not_sent: {
+      label: "Sin envio SFTP",
+      className: "sftp-status-not-sent",
+    },
+    pending: {
+      label: "Envio SFTP pendiente",
+      className: "sftp-status-pending",
+    },
+    sending: {
+      label: "Enviando por SFTP",
+      className: "sftp-status-sending",
+    },
+    sent: {
+      label: "Enviado por SFTP",
+      className: "sftp-status-sent",
+    },
+    failed: {
+      label: "Error en envio SFTP",
+      className: "sftp-status-failed",
+    },
+  };
+
+  const getSftpStatusMeta = (doc) => {
+    const status = String(
+      doc?.sftpStatus || doc?.sftpDelivery?.status || "not_sent",
+    ).toLowerCase();
+
+    return SFTP_STATUS_META[status] || SFTP_STATUS_META.not_sent;
+  };
 
     const getSiteLabel = (site) => {
     return SITE_LABELS[site] || "Sin sede";
@@ -89,6 +119,17 @@
         siteCell.textContent = getSiteLabel(doc.site);
       }
 
+      const sftpStatusCell = document.createElement("td");
+      sftpStatusCell.className = "sftp-status-cell";
+      const sftpStatusMeta = getSftpStatusMeta(doc);
+      const sftpStatusIndicator = document.createElement("span");
+      sftpStatusIndicator.className =
+        `sftp-status-indicator ${sftpStatusMeta.className}`;
+      sftpStatusIndicator.title = sftpStatusMeta.label;
+      sftpStatusIndicator.setAttribute("aria-label", sftpStatusMeta.label);
+      sftpStatusIndicator.setAttribute("role", "img");
+      sftpStatusCell.appendChild(sftpStatusIndicator);
+
       const actionsCell = document.createElement("td");
       const actionsWrap = document.createElement("div");
       actionsWrap.className = "admin-actions";
@@ -127,17 +168,31 @@
         if (deleteModal) deleteModal.classList.remove("hidden");
       });
       actionsWrap.style.display = "flex";
+
+      const sftpBtn = document.createElement("button");
+      sftpBtn.type = "button";
+      sftpBtn.className = "admin-action-btn sftp-btn";
+      sftpBtn.title = "Enviar por SFTP";
+      sftpBtn.setAttribute(
+        "aria-label",
+        `Enviar ${getAdminDocName(doc)} por SFTP`,
+      );
+      sftpBtn.dataset.documentId = doc._id;
+      sftpBtn.dataset.documentType = currentDocType;
+      sftpBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="15" height="5" rx="1.5"/><rect x="2.5" y="12" width="15" height="5" rx="1.5"/><circle cx="5.5" cy="5.5" r="0.7" fill="currentColor" stroke="none"/><circle cx="5.5" cy="14.5" r="0.7" fill="currentColor" stroke="none"/><path d="M10 14V7.5m0 0L7.8 9.7M10 7.5l2.2 2.2"/></svg>`;
       actionsWrap.style.gap = "4px";
       actionsWrap.appendChild(downloadBtn);
       actionsWrap.appendChild(updateBtn);
       actionsWrap.appendChild(copyBtn);
       actionsWrap.appendChild(deleteBtn);
+      actionsWrap.appendChild(sftpBtn);
       actionsCell.appendChild(actionsWrap);
       row.appendChild(nameCell);
       row.appendChild(nomenclatureCell);
       row.appendChild(updatedCell);
       row.appendChild(userCell);
       if (siteCell) row.appendChild(siteCell);
+      row.appendChild(sftpStatusCell);
       row.appendChild(actionsCell);
       tableBody.appendChild(row);
     });
@@ -384,7 +439,7 @@
     tableBody.innerHTML = "";
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = isAdminViewer ? 6 : 5;
+    cell.colSpan = isAdminViewer ? 7 : 6;
     cell.className = "no-jobs";
     cell.textContent = message;
     row.appendChild(cell);
