@@ -4,6 +4,9 @@ const mongoose = require("mongoose");
 const masterFileRepository = require(
   "../repositories/masterFileRepository"
 );
+const masterFileSyncAuditRepository = require(
+  "../repositories/masterFileSyncAuditRepository"
+);
 const {
   parseMasterFileBuffer,
   buildMasterRecordFromEditorRow,
@@ -29,6 +32,9 @@ const {
 
 const VALID_MASTER_SITES = VALID_SITES;
 const VALID_MASTER_TYPES = Object.values(MASTER_TYPES);
+const MASTER_SYNC_DOCUMENT_TYPES = new Set(
+  VALID_MASTER_TYPES,
+);
 
 /**
  * Genera errores que posteriormente podrá interpretar
@@ -1434,6 +1440,926 @@ const enrichImportedRowsFromMasterFiles = async ({
       ambiguousRows,
       filledFieldCount,
     },
+  };
+};
+
+const normalizeMasterSyncKeyValue = (value) =>
+  String(value ?? "").trim().toUpperCase();
+
+const getMasterSyncRecordKey = (
+  masterType,
+  record,
+) => {
+  const partNumber =
+    normalizeMasterSyncKeyValue(
+      record?.partNumberNormalized ||
+        record?.partNumber,
+    );
+
+  if (!partNumber) {
+    throw createMasterServiceError(
+      "MASTER_SYNC_PART_NUMBER_REQUIRED",
+      "Todas las filas requieren un Part Number para actualizar el archivo madre.",
+      409,
+    );
+  }
+
+  if (
+    masterType !==
+    MASTER_TYPES.BILL_OF_MATERIALS
+  ) {
+    return partNumber;
+  }
+
+  const componentPartNumber =
+    normalizeMasterSyncKeyValue(
+      record?.normalizedValues
+        ?.componentPartNumber,
+    );
+
+  if (!componentPartNumber) {
+    throw createMasterServiceError(
+      "MASTER_SYNC_COMPONENT_REQUIRED",
+      `El B.O.M. de "${partNumber}" requiere Component Part Number.`,
+      409,
+    );
+  }
+
+  return `${partNumber}||${componentPartNumber}`;
+};
+
+const normalizeComparableMasterValue = (
+  value,
+) => {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return undefined;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? undefined
+      : value.toISOString();
+  }
+
+  if (Array.isArray(value)) {
+    const values = value
+      .map(normalizeComparableMasterValue)
+      .filter(
+        (item) => item !== undefined,
+      );
+
+    return values.length
+      ? values
+      : undefined;
+  }
+
+  if (
+    typeof value === "object"
+  ) {
+    const source =
+      typeof value.toObject === "function"
+        ? value.toObject()
+        : value;
+    const entries = Object.keys(source)
+      .sort()
+      .map((key) => [
+        key,
+        normalizeComparableMasterValue(
+          source[key],
+        ),
+      ])
+      .filter(([, item]) =>
+        item !== undefined,
+      );
+
+    return entries.length
+      ? Object.fromEntries(entries)
+      : undefined;
+  }
+
+  return value;
+};
+
+const getMasterSyncRecordSignature = (
+  masterType,
+  record,
+) => {
+  return JSON.stringify({
+    partNumber:
+      normalizeMasterSyncKeyValue(
+        record?.partNumberNormalized ||
+          record?.partNumber,
+      ),
+    normalizedValues:
+      normalizeComparableMasterValue(
+        filterMasterNormalizedValues(
+          masterType,
+          record?.normalizedValues || {},
+        ),
+      ) || {},
+  });
+};
+
+const getMasterSyncAuditValues = (
+  masterType,
+  record,
+) => {
+  const values = {};
+  const rawCells = Array.isArray(record?.rawCells)
+    ? record.rawCells
+    : [];
+  const rawValuesByHeader = new Map(
+    rawCells.map((cell) => [
+      String(cell?.header || "").trim(),
+      cell?.value,
+    ]),
+  );
+
+  getCanonicalMasterHeaders(masterType).forEach(
+    (header) => {
+      if (header.mappedField === "partNumber") {
+        values[header.originalName] = record?.partNumber || "";
+        return;
+      }
+
+      if (rawValuesByHeader.has(header.originalName)) {
+        values[header.originalName] = rawValuesByHeader.get(
+          header.originalName,
+        );
+      }
+    },
+  );
+
+  return values;
+};
+
+const buildMasterSyncAuditFields = ({
+  masterType,
+  beforeRecord = null,
+  afterRecord,
+  includeAllAfter = false,
+}) => {
+  const beforeValues = beforeRecord
+    ? getMasterSyncAuditValues(masterType, beforeRecord)
+    : {};
+  const afterValues = getMasterSyncAuditValues(
+    masterType,
+    afterRecord,
+  );
+
+  return getCanonicalMasterHeaders(masterType)
+    .map((header) => {
+      const field = header.originalName;
+      const hasBefore = Object.prototype.hasOwnProperty.call(
+        beforeValues,
+        field,
+      );
+      const hasAfter = Object.prototype.hasOwnProperty.call(
+        afterValues,
+        field,
+      );
+      const before = hasBefore ? beforeValues[field] : null;
+      const after = hasAfter ? afterValues[field] : null;
+      const beforeComparable = normalizeComparableMasterValue(before);
+      const afterComparable = normalizeComparableMasterValue(after);
+      const changed =
+        JSON.stringify(beforeComparable) !==
+        JSON.stringify(afterComparable);
+
+      if (includeAllAfter ? !hasAfter : !changed) {
+        return null;
+      }
+
+      return {
+        field,
+        before,
+        after,
+      };
+    })
+    .filter(Boolean);
+};
+
+const buildMasterSyncAuditChange = ({
+  masterType,
+  action,
+  entry,
+  sourceRow,
+}) => ({
+  action,
+  recordKey: entry.key,
+  partNumber: entry.record.partNumber,
+  componentPartNumber:
+    entry.record.normalizedValues?.componentPartNumber || "",
+  sourceRow,
+  changedFields: buildMasterSyncAuditFields({
+    masterType,
+    beforeRecord: action === "updated" ? entry.current : null,
+    afterRecord: entry.record,
+    includeAllAfter: action === "added",
+  }),
+});
+
+const buildMasterSyncRecords = ({
+  masterType,
+  rows,
+}) => {
+  if (
+    !MASTER_SYNC_DOCUMENT_TYPES.has(
+      masterType,
+    )
+  ) {
+    throw createMasterServiceError(
+      "MASTER_SYNC_TYPE_NOT_SUPPORTED",
+      "Este tipo de documento no actualiza archivos madre.",
+      400,
+    );
+  }
+
+  if (
+    !Array.isArray(rows) ||
+    rows.length === 0
+  ) {
+    throw createMasterServiceError(
+      "MASTER_SYNC_ROWS_REQUIRED",
+      "No hay filas para actualizar el archivo madre.",
+      409,
+    );
+  }
+
+  const headers =
+    getCanonicalMasterHeaders(
+      masterType,
+    );
+  const recordsByKey = new Map();
+
+  rows.forEach((row, index) => {
+    const cells = headers.map(
+      (header) => ({
+        columnIndex:
+          header.columnIndex,
+        columnLetter:
+          header.columnLetter,
+        value:
+          row?.[header.originalName],
+      }),
+    );
+    const record =
+      canonicalizeMasterRecord(
+        masterType,
+        buildMasterRecordFromEditorRow({
+          masterType,
+          headers,
+          cells,
+          sourceRow: index + 2,
+        }),
+      );
+    const key = getMasterSyncRecordKey(
+      masterType,
+      record,
+    );
+    const signature =
+      getMasterSyncRecordSignature(
+        masterType,
+        record,
+      );
+    const previous =
+      recordsByKey.get(key);
+
+    if (
+      previous &&
+      previous.signature !== signature
+    ) {
+      throw createMasterServiceError(
+        "MASTER_SYNC_SOURCE_DUPLICATE_CONFLICT",
+        `La llave "${key}" aparece con valores diferentes en el archivo enviado.`,
+        409,
+      );
+    }
+
+    if (!previous) {
+      recordsByKey.set(key, {
+        key,
+        record,
+        signature,
+      });
+    }
+  });
+
+  return [...recordsByKey.values()];
+};
+
+const planMasterRecordSync = ({
+  masterType,
+  incomingRecords,
+  existingRecords,
+}) => {
+  const existingByKey = new Map();
+
+  (existingRecords || []).forEach(
+    (record) => {
+      const key = getMasterSyncRecordKey(
+        masterType,
+        record,
+      );
+
+      if (existingByKey.has(key)) {
+        throw createMasterServiceError(
+          "MASTER_SYNC_TARGET_DUPLICATE",
+          `El archivo madre contiene mas de un registro para la llave "${key}".`,
+          409,
+        );
+      }
+
+      existingByKey.set(key, record);
+    },
+  );
+
+  const added = [];
+  const updated = [];
+  const unchanged = [];
+
+  (incomingRecords || []).forEach(
+    (incoming) => {
+      const current =
+        existingByKey.get(
+          incoming.key,
+        );
+
+      if (!current) {
+        added.push(incoming);
+        return;
+      }
+
+      const currentSignature =
+        getMasterSyncRecordSignature(
+          masterType,
+          current,
+        );
+
+      if (
+        currentSignature ===
+        incoming.signature
+      ) {
+        unchanged.push({
+          ...incoming,
+          current,
+        });
+        return;
+      }
+
+      updated.push({
+        ...incoming,
+        current,
+      });
+    },
+  );
+
+  return {
+    added,
+    updated,
+    unchanged,
+    summary: {
+      total:
+        (incomingRecords || []).length,
+      added: added.length,
+      updated: updated.length,
+      unchanged: unchanged.length,
+    },
+  };
+};
+
+const assertExclusiveMasterSyncSite = (
+  masterFile,
+  site,
+) => {
+  const normalizedSites =
+    normalizeMasterSites(
+      masterFile?.sites || [],
+    );
+
+  if (
+    normalizedSites.length !== 1 ||
+    normalizedSites[0] !== site
+  ) {
+    throw createMasterServiceError(
+      "MASTER_SYNC_TARGET_SITE_SHARED",
+      "El archivo madre mas reciente pertenece a varias sedes y no puede actualizarse automaticamente.",
+      409,
+    );
+  }
+};
+
+const prepareAdminFileMasterSync =
+  async ({
+    documentType,
+    rows,
+    site,
+    user,
+  }) => {
+    if (
+      documentType === "splScrap"
+    ) {
+      return {
+        required: false,
+      };
+    }
+
+    if (
+      !MASTER_SYNC_DOCUMENT_TYPES.has(
+        documentType,
+      )
+    ) {
+      throw createMasterServiceError(
+        "MASTER_SYNC_TYPE_NOT_SUPPORTED",
+        "Este tipo de documento no puede actualizar archivos madre.",
+        400,
+      );
+    }
+
+    getMasterEditorUserId(user);
+    const normalizedSite =
+      String(site || "")
+        .trim()
+        .toLowerCase();
+
+    if (
+      !VALID_MASTER_SITES.includes(
+        normalizedSite,
+      )
+    ) {
+      throw createMasterServiceError(
+        "MASTER_SYNC_SITE_INVALID",
+        "La sede para actualizar el archivo madre no es valida.",
+        400,
+      );
+    }
+
+    const masterFile =
+      await masterFileRepository
+        .findLatestReadyMasterFileForSiteAndType({
+          site: normalizedSite,
+          masterType: documentType,
+        });
+
+    if (!masterFile) {
+      throw createMasterServiceError(
+        "MASTER_SYNC_TARGET_NOT_FOUND",
+        "No existe un archivo madre listo para la sede y tipo seleccionados.",
+        409,
+      );
+    }
+
+    assertExclusiveMasterSyncSite(
+      masterFile,
+      normalizedSite,
+    );
+
+    const incomingRecords =
+      buildMasterSyncRecords({
+        masterType: documentType,
+        rows,
+      });
+    const partNumbers =
+      incomingRecords.map(
+        ({ record }) =>
+          record.partNumberNormalized,
+      );
+    const existingRecords =
+      await masterFileRepository
+        .findActiveMasterRecordsForSync({
+          masterFileId:
+            masterFile._id,
+          partNumbers,
+        });
+    const preview =
+      planMasterRecordSync({
+        masterType: documentType,
+        incomingRecords,
+        existingRecords,
+      });
+
+    return {
+      required: true,
+      masterType: documentType,
+      site: normalizedSite,
+      masterFileId:
+        String(masterFile._id),
+      masterFileName:
+        masterFile.name,
+      expectedRevision:
+        Number(masterFile.revision),
+      incomingRecords,
+      previewSummary:
+        preview.summary,
+    };
+  };
+
+const applyPreparedAdminFileMasterSync =
+  async ({
+    preparedSync,
+    user,
+    auditContext,
+  }) => {
+    if (!preparedSync?.required) {
+      return {
+        required: false,
+      };
+    }
+
+    const editorUserId =
+      getMasterEditorUserId(user);
+
+    if (
+      !auditContext?.adminDocumentId ||
+      !mongoose.Types.ObjectId.isValid(
+        auditContext.adminDocumentId,
+      )
+    ) {
+      throw createMasterServiceError(
+        "MASTER_SYNC_AUDIT_CONTEXT_REQUIRED",
+        "No se recibio la referencia del archivo administrativo para la auditoria.",
+        500,
+      );
+    }
+    const {
+      masterFileId,
+      masterType,
+      site,
+      expectedRevision,
+      incomingRecords,
+    } = preparedSync;
+    const session =
+      await mongoose.startSession();
+    let syncResult = null;
+
+    try {
+      await session.withTransaction(
+        async () => {
+          const masterFile =
+            await masterFileRepository
+              .findMasterFileById(
+                masterFileId,
+                session,
+              );
+
+          if (!masterFile) {
+            throw createMasterServiceError(
+              "MASTER_SYNC_TARGET_NOT_FOUND",
+              "El archivo madre seleccionado ya no existe.",
+              409,
+            );
+          }
+
+          if (
+            masterFile.status !== "ready"
+          ) {
+            throw createMasterServiceError(
+              "MASTER_SYNC_TARGET_NOT_READY",
+              "El archivo madre seleccionado ya no esta disponible.",
+              409,
+            );
+          }
+
+          if (
+            masterFile.masterType !==
+            masterType
+          ) {
+            throw createMasterServiceError(
+              "MASTER_SYNC_TARGET_TYPE_CHANGED",
+              "El tipo del archivo madre cambio antes de aplicar la actualizacion.",
+              409,
+            );
+          }
+
+          assertExclusiveMasterSyncSite(
+            masterFile,
+            site,
+          );
+
+          if (
+            Number(masterFile.revision) !==
+            Number(expectedRevision)
+          ) {
+            throw createMasterServiceError(
+              "MASTER_SYNC_REVISION_CONFLICT",
+              "El archivo madre fue modificado durante el envio SFTP.",
+              409,
+            );
+          }
+
+          const partNumbers =
+            incomingRecords.map(
+              ({ record }) =>
+                record
+                  .partNumberNormalized,
+            );
+          const existingRecords =
+            await masterFileRepository
+              .findActiveMasterRecordsForSync({
+                masterFileId,
+                partNumbers,
+                session,
+              });
+          const plan =
+            planMasterRecordSync({
+              masterType,
+              incomingRecords,
+              existingRecords,
+            });
+          const currentRecordCount =
+            await masterFileRepository
+              .countActiveMasterRecords(
+                masterFileId,
+                session,
+              );
+          const highestSourceRecord =
+            await masterFileRepository
+              .findHighestMasterRecordSourceRow(
+                masterFileId,
+                session,
+              );
+          let nextSourceRow = Math.max(
+            Number(
+              highestSourceRecord
+                ?.sourceRow,
+            ) || 0,
+            Number(
+              masterFile.headerRow,
+            ) || 0,
+          );
+          const operations = [];
+          const auditChanges = [];
+
+          plan.updated.forEach(
+            (entry) => {
+              const recordData = {
+                ...entry.record,
+                sourceRow:
+                  entry.current
+                    .sourceRow,
+              };
+
+              operations.push({
+                updateOne: {
+                  filter: {
+                    _id:
+                      entry.current._id,
+                    masterFileId,
+                    isDeleted: false,
+                  },
+                  update: {
+                    $set: {
+                      ...recordData,
+                      sites: [site],
+                      updatedBy:
+                        editorUserId,
+                      isDeleted: false,
+                    },
+                    $unset: {
+                      deletedAt: "",
+                      deletedBy: "",
+                    },
+                  },
+                },
+              });
+
+              auditChanges.push(
+                buildMasterSyncAuditChange({
+                  masterType,
+                  action: "updated",
+                  entry,
+                  sourceRow: entry.current.sourceRow,
+                }),
+              );
+            },
+          );
+
+          plan.added.forEach(
+            (entry) => {
+              const sourceRow = ++nextSourceRow;
+
+              operations.push({
+                insertOne: {
+                  document: {
+                    ...entry.record,
+                    sourceRow,
+                    masterFileId,
+                    sites: [site],
+                    createdBy:
+                      editorUserId,
+                    updatedBy:
+                      editorUserId,
+                    isDeleted: false,
+                  },
+                },
+              });
+
+              auditChanges.push(
+                buildMasterSyncAuditChange({
+                  masterType,
+                  action: "added",
+                  entry,
+                  sourceRow,
+                }),
+              );
+            },
+          );
+
+          if (operations.length > 0) {
+            await masterFileRepository
+              .bulkWriteMasterRecords(
+                operations,
+                session,
+              );
+          }
+
+          const warningCount =
+            operations.length > 0
+              ? await masterFileRepository
+                  .countActiveMasterRecordWarnings(
+                    masterFileId,
+                    session,
+                  )
+              : Number(
+                  masterFile.warningCount,
+                ) || 0;
+          let updatedMasterFile =
+            masterFile;
+
+          if (operations.length > 0) {
+            updatedMasterFile =
+              await masterFileRepository
+                .updateMasterFileByIdAndRevision(
+                  masterFileId,
+                  expectedRevision,
+                  {
+                    headers:
+                      getCanonicalMasterHeaders(
+                        masterType,
+                      ),
+                    partNumberColumn: "A",
+                    recordCount:
+                      currentRecordCount +
+                      plan.summary.added,
+                    warningCount,
+                    lastImportedAt:
+                      new Date(),
+                    updatedBy:
+                      editorUserId,
+                  },
+                  session,
+                );
+
+            if (!updatedMasterFile) {
+              throw createMasterServiceError(
+                "MASTER_SYNC_REVISION_CONFLICT",
+                "El archivo madre fue modificado durante el envio SFTP.",
+                409,
+              );
+            }
+          }
+
+          const audit =
+            await masterFileSyncAuditRepository.createAudit(
+              {
+                adminDocumentId:
+                  auditContext.adminDocumentId,
+                documentType: masterType,
+                adminFileName:
+                  String(auditContext.adminFileName || "").trim(),
+                masterFileId,
+                masterFileName: masterFile.name,
+                site,
+                appliedBy: editorUserId,
+                sftpRemoteFileName:
+                  String(
+                    auditContext.sftpRemoteFileName || "",
+                  ).trim(),
+                summary: plan.summary,
+              },
+              session,
+            );
+
+          await masterFileSyncAuditRepository.insertChanges(
+            auditChanges.map((change) => ({
+              ...change,
+              auditId: audit._id,
+              masterFileId,
+            })),
+            session,
+          );
+
+          syncResult = {
+            required: true,
+            masterFileId:
+              String(
+                updatedMasterFile._id,
+              ),
+            masterFileName:
+              updatedMasterFile.name,
+            masterType,
+            site,
+            recordCount:
+              operations.length > 0
+                ? currentRecordCount +
+                  plan.summary.added
+                : currentRecordCount,
+            auditId: String(audit._id),
+            ...plan.summary,
+          };
+        },
+      );
+    } finally {
+      await session.endSession();
+    }
+
+    if (!syncResult) {
+      throw createMasterServiceError(
+        "MASTER_SYNC_NOT_COMPLETED",
+        "No fue posible actualizar el archivo madre.",
+        500,
+      );
+    }
+
+    return syncResult;
+  };
+
+const listAdminFileMasterSyncAudits = async ({
+  adminDocumentId,
+  documentType,
+  user,
+  limit = 20,
+}) => {
+  getMasterEditorUserId(user);
+
+  if (!mongoose.Types.ObjectId.isValid(adminDocumentId)) {
+    throw createMasterServiceError(
+      "MASTER_SYNC_ADMIN_DOCUMENT_INVALID",
+      "El archivo administrativo no es valido.",
+      400,
+    );
+  }
+
+  if (!MASTER_SYNC_DOCUMENT_TYPES.has(documentType)) {
+    return [];
+  }
+
+  const safeLimit = Math.min(
+    Math.max(Number.parseInt(limit, 10) || 20, 1),
+    50,
+  );
+
+  return masterFileSyncAuditRepository.findAuditsForAdminDocument({
+    adminDocumentId,
+    documentType,
+    limit: safeLimit,
+  });
+};
+
+const getAdminFileMasterSyncAuditDetails = async ({
+  auditId,
+  adminDocumentId,
+  documentType,
+  user,
+}) => {
+  getMasterEditorUserId(user);
+
+  if (
+    !mongoose.Types.ObjectId.isValid(auditId) ||
+    !mongoose.Types.ObjectId.isValid(adminDocumentId)
+  ) {
+    throw createMasterServiceError(
+      "MASTER_SYNC_AUDIT_INVALID",
+      "La auditoria solicitada no es valida.",
+      400,
+    );
+  }
+
+  const audit =
+    await masterFileSyncAuditRepository.findAuditByIdForAdminDocument({
+      auditId,
+      adminDocumentId,
+      documentType,
+    });
+
+  if (!audit) {
+    throw createMasterServiceError(
+      "MASTER_SYNC_AUDIT_NOT_FOUND",
+      "No se encontro la auditoria solicitada.",
+      404,
+    );
+  }
+
+  const changes =
+    await masterFileSyncAuditRepository.findChangesByAuditId(auditId);
+
+  return {
+    audit,
+    changes,
   };
 };
 
@@ -2962,6 +3888,13 @@ module.exports = {
   lookupMasterRecordByPartNumber,
   enrichBillOfMaterialsRows,
   enrichImportedRowsFromMasterFiles,
+  buildMasterSyncRecords,
+  planMasterRecordSync,
+  prepareAdminFileMasterSync,
+  applyPreparedAdminFileMasterSync,
+  buildMasterSyncAuditFields,
+  listAdminFileMasterSyncAudits,
+  getAdminFileMasterSyncAuditDetails,
   getMasterFileEditorData,
   updateMasterFileFromEditor,
   downloadMasterFile,

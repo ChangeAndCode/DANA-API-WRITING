@@ -72,6 +72,7 @@
               <th>Por Usuario</th>
               <th id="siteColumnHeader" class="hidden">Sede</th>
               <th>SFTP</th>
+              <th class="mf-status-header" title="Estado de actualizacion del archivo madre">MF</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -164,6 +165,77 @@
       <div class="modal-actions">
         <button type="button" id="sftpCancelBtn" class="button">Cancelar</button>
         <button type="button" id="sftpConfirmBtn" class="button sftp-confirm-btn">Env&iacute;o</button>
+      </div>
+    </div>
+  </div>
+  <div id="mfModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="mfModalTitle">
+    <div class="modal mf-modal">
+      <h3 id="mfModalTitle">Actualizacion de archivo madre</h3>
+      <p class="sftp-file-summary">
+        Archivo: <strong id="mfSourceFileName">-</strong>
+      </p>
+
+      <div class="mf-modal-status">
+        <span id="mfModalStatusIcon" class="mf-status-icon mf-status-pending" aria-hidden="true"></span>
+        <span id="mfModalStatusText">Actualizacion pendiente</span>
+      </div>
+
+      <dl class="sftp-audit-grid mf-audit-grid">
+        <div>
+          <dt>Intentos</dt>
+          <dd id="mfAttempts">0</dd>
+        </div>
+        <div>
+          <dt>Ultimo intento</dt>
+          <dd id="mfLastAttempt">-</dd>
+        </div>
+        <div>
+          <dt>Ultimo usuario</dt>
+          <dd id="mfLastUser">-</dd>
+        </div>
+        <div>
+          <dt>Aplicado</dt>
+          <dd id="mfAppliedAt">-</dd>
+        </div>
+      </dl>
+
+      <dl class="mf-summary-grid">
+        <div><dt>Agregados</dt><dd id="mfAdded">0</dd></div>
+        <div><dt>Actualizados</dt><dd id="mfUpdated">0</dd></div>
+        <div><dt>Sin cambios</dt><dd id="mfUnchanged">0</dd></div>
+      </dl>
+
+      <div id="mfLastErrorRow" class="sftp-last-error hidden">
+        <strong>Ultimo error:</strong>
+        <span id="mfLastError">-</span>
+      </div>
+
+      <div id="mfAuditSelectorGroup" class="modal-form-group hidden">
+        <label for="mfAuditSelect">Historial de actualizaciones</label>
+        <select id="mfAuditSelect"></select>
+      </div>
+
+      <div id="mfAuditDetails" class="mf-audit-details hidden">
+        <div id="mfAuditMeta" class="mf-audit-meta"></div>
+        <div class="mf-change-table-wrap">
+          <table class="mf-change-table">
+            <thead>
+              <tr>
+                <th>Accion</th>
+                <th>Registro</th>
+                <th>Cambios</th>
+              </tr>
+            </thead>
+            <tbody id="mfChangeTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <p id="mfModalMessage" class="sftp-modal-message hidden" role="status" aria-live="polite"></p>
+
+      <div class="modal-actions">
+        <button type="button" id="mfCancelBtn" class="button">Cerrar</button>
+        <button type="button" id="mfRetryBtn" class="button mf-retry-btn hidden">Reintentar actualizacion</button>
       </div>
     </div>
   </div>

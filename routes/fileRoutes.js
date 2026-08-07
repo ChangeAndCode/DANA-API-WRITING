@@ -64,6 +64,21 @@ router.post(
   API_PROTECTED,
   fileController.sendAdminFileViaSftp,
 );
+router.get(
+  '/admin-files/:id/master-sync/audits',
+  API_PROTECTED,
+  fileController.getAdminFileMasterSyncAudits,
+);
+router.get(
+  '/admin-files/:id/master-sync/audits/:auditId',
+  API_PROTECTED,
+  fileController.getAdminFileMasterSyncAuditDetails,
+);
+router.post(
+  '/admin-files/:id/master-sync/retry',
+  API_PROTECTED,
+  fileController.retryAdminFileMasterSync,
+);
 router.delete(
   '/admin-files/:id',
   API_PROTECTED,

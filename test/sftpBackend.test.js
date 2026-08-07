@@ -85,16 +85,18 @@ test("los errores publicos SFTP no exponen el mensaje interno", () => {
 
 test("los cuatro modelos inician sin envio SFTP", () => {
   const models = [
-    FinishedProduct,
-    RawMaterial,
-    BillOfMaterials,
-    SPLScrap,
+    [FinishedProduct, "pending"],
+    [RawMaterial, "pending"],
+    [BillOfMaterials, "pending"],
+    [SPLScrap, "not_applicable"],
   ];
 
-  models.forEach((Model) => {
+  models.forEach(([Model, expectedMfStatus]) => {
     const document = new Model();
     assert.equal(document.sftpDelivery.status, "not_sent");
     assert.equal(document.sftpDelivery.attempts, 0);
+    assert.equal(document.masterFileSync.status, expectedMfStatus);
+    assert.equal(document.masterFileSync.attempts, 0);
   });
 });
 

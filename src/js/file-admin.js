@@ -28,6 +28,27 @@
   const sftpModalMessage = document.getElementById("sftpModalMessage");
   const sftpCancelBtn = document.getElementById("sftpCancelBtn");
   const sftpConfirmBtn = document.getElementById("sftpConfirmBtn");
+  const mfModal = document.getElementById("mfModal");
+  const mfSourceFileName = document.getElementById("mfSourceFileName");
+  const mfModalStatusIcon = document.getElementById("mfModalStatusIcon");
+  const mfModalStatusText = document.getElementById("mfModalStatusText");
+  const mfAttempts = document.getElementById("mfAttempts");
+  const mfLastAttempt = document.getElementById("mfLastAttempt");
+  const mfLastUser = document.getElementById("mfLastUser");
+  const mfAppliedAt = document.getElementById("mfAppliedAt");
+  const mfAdded = document.getElementById("mfAdded");
+  const mfUpdated = document.getElementById("mfUpdated");
+  const mfUnchanged = document.getElementById("mfUnchanged");
+  const mfLastErrorRow = document.getElementById("mfLastErrorRow");
+  const mfLastError = document.getElementById("mfLastError");
+  const mfAuditSelectorGroup = document.getElementById("mfAuditSelectorGroup");
+  const mfAuditSelect = document.getElementById("mfAuditSelect");
+  const mfAuditDetails = document.getElementById("mfAuditDetails");
+  const mfAuditMeta = document.getElementById("mfAuditMeta");
+  const mfChangeTableBody = document.getElementById("mfChangeTableBody");
+  const mfModalMessage = document.getElementById("mfModalMessage");
+  const mfCancelBtn = document.getElementById("mfCancelBtn");
+  const mfRetryBtn = document.getElementById("mfRetryBtn");
 
   // Filtros por columna
   const filterNombre = document.getElementById("filterNombre");
@@ -69,6 +90,81 @@
       label: "Error en envio SFTP",
       className: "sftp-status-failed",
     },
+  };
+
+  const MF_STATUS_META = {
+    not_applicable: {
+      label: "No aplica para Packing List",
+      className: "mf-status-not-applicable",
+    },
+    pending: {
+      label: "Actualizacion pendiente",
+      className: "mf-status-pending",
+    },
+    applying: {
+      label: "Actualizando archivo madre",
+      className: "mf-status-applying",
+    },
+    applied: {
+      label: "Archivo madre actualizado",
+      className: "mf-status-applied",
+    },
+    failed: {
+      label: "Error al actualizar archivo madre",
+      className: "mf-status-failed",
+    },
+  };
+
+  const MF_STATUS_ICONS = {
+    not_applicable: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 12h10"/></svg>`,
+    pending: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>`,
+    applying: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14-5l-2 2"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14 5l2-2"/><path d="M20 20v-4h-4"/></svg>`,
+    applied: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="6" rx="6" ry="3"/><path d="M4 6v8c0 1.7 2.7 3 6 3"/><path d="M4 10c0 1.7 2.7 3 6 3"/><path d="m14 17 2 2 4-5"/></svg>`,
+    failed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 3 20h18L12 4Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>`,
+  };
+
+  const getMasterFileSync = (doc) =>
+    doc?.masterFileSync && typeof doc.masterFileSync === "object"
+      ? doc.masterFileSync
+      : {};
+
+  const getMfStatusKey = (doc) => {
+    const fallback = currentDocType === "splScrap"
+      ? "not_applicable"
+      : "pending";
+    const status = String(getMasterFileSync(doc).status || fallback)
+      .trim()
+      .toLowerCase();
+    return MF_STATUS_META[status] ? status : fallback;
+  };
+
+  const getMfStatusMeta = (doc) =>
+    MF_STATUS_META[getMfStatusKey(doc)] || MF_STATUS_META.pending;
+
+  const getMfLastUserLabel = (doc) => {
+    const lastUser = getMasterFileSync(doc).lastAttemptBy;
+    if (!lastUser) return "-";
+    if (typeof lastUser === "object") {
+      return lastUser.displayName || lastUser.email || lastUser._id || "-";
+    }
+    return userCache.get(String(lastUser)) || String(lastUser);
+  };
+
+  const getMfStatusTitle = (doc) => {
+    const sync = getMasterFileSync(doc);
+    const summary = sync.summary || {};
+    const details = [getMfStatusMeta(doc).label];
+    if (sync.masterFileName) details.push("Master File: " + sync.masterFileName);
+    if (sync.lastAttemptAt) {
+      details.push("Ultimo intento: " + formatDate(sync.lastAttemptAt));
+    }
+    if (getMfStatusKey(doc) === "applied") {
+      details.push(
+        `Agregados: ${Number(summary.added) || 0}; actualizados: ${Number(summary.updated) || 0}; sin cambios: ${Number(summary.unchanged) || 0}`,
+      );
+    }
+    if (sync.lastError) details.push("Error: " + sync.lastError);
+    return details.join("\n");
   };
 
   const getSftpStatusKey = (doc) => {
@@ -204,6 +300,25 @@
       sftpStatusIndicator.setAttribute("role", "img");
       sftpStatusCell.appendChild(sftpStatusIndicator);
 
+      const mfStatusCell = document.createElement("td");
+      mfStatusCell.className = "mf-status-cell";
+      const mfStatus = getMfStatusKey(doc);
+      const mfStatusMeta = getMfStatusMeta(doc);
+      const mfStatusButton = document.createElement("button");
+      mfStatusButton.type = "button";
+      mfStatusButton.className = "mf-status-button";
+      mfStatusButton.title = getMfStatusTitle(doc);
+      mfStatusButton.setAttribute("aria-label", mfStatusMeta.label);
+      const mfStatusIcon = document.createElement("span");
+      mfStatusIcon.className =
+        `mf-status-icon ${mfStatusMeta.className}`;
+      mfStatusIcon.innerHTML = MF_STATUS_ICONS[mfStatus];
+      mfStatusButton.appendChild(mfStatusIcon);
+      mfStatusButton.addEventListener("click", () => {
+        openMfModal(doc);
+      });
+      mfStatusCell.appendChild(mfStatusButton);
+
       const actionsCell = document.createElement("td");
       const actionsWrap = document.createElement("div");
       actionsWrap.className = "admin-actions";
@@ -271,6 +386,7 @@
       row.appendChild(userCell);
       if (siteCell) row.appendChild(siteCell);
       row.appendChild(sftpStatusCell);
+      row.appendChild(mfStatusCell);
       row.appendChild(actionsCell);
       tableBody.appendChild(row);
     });
@@ -396,8 +512,11 @@
   let pendingCopyDoc = null;
   let usersLoaded = false;
   let pendingSftpDoc = null;
+  let pendingMfDoc = null;
   let currentUserSite = "";
   let isSftpSubmitting = false;
+  let isMfSubmitting = false;
+  let mfAudits = [];
 
   const userCache = new Map();
 
@@ -717,11 +836,322 @@
     }
   };
 
+  const clearMfModalMessage = () => {
+    if (!mfModalMessage) return;
+    mfModalMessage.textContent = "";
+    mfModalMessage.classList.add("hidden");
+    mfModalMessage.classList.remove("is-error", "is-success");
+  };
+
+  const showMfModalMessage = (message, type = "error") => {
+    if (!mfModalMessage) return;
+    mfModalMessage.textContent = message;
+    mfModalMessage.classList.remove("hidden", "is-error", "is-success");
+    mfModalMessage.classList.add(
+      type === "success" ? "is-success" : "is-error",
+    );
+  };
+
+  const renderMfModalDetails = (doc) => {
+    const sync = getMasterFileSync(doc);
+    const status = getMfStatusKey(doc);
+    const statusMeta = getMfStatusMeta(doc);
+    const summary = sync.summary || {};
+
+    if (mfModalStatusIcon) {
+      mfModalStatusIcon.className =
+        `mf-status-icon ${statusMeta.className}`;
+      mfModalStatusIcon.innerHTML = MF_STATUS_ICONS[status];
+    }
+    if (mfModalStatusText) {
+      mfModalStatusText.textContent = statusMeta.label;
+    }
+    if (mfAttempts) mfAttempts.textContent = Number(sync.attempts) || 0;
+    if (mfLastAttempt) {
+      mfLastAttempt.textContent = sync.lastAttemptAt
+        ? formatDate(sync.lastAttemptAt)
+        : "-";
+    }
+    if (mfLastUser) mfLastUser.textContent = getMfLastUserLabel(doc);
+    if (mfAppliedAt) {
+      mfAppliedAt.textContent = sync.appliedAt
+        ? formatDate(sync.appliedAt)
+        : "-";
+    }
+    if (mfAdded) mfAdded.textContent = Number(summary.added) || 0;
+    if (mfUpdated) mfUpdated.textContent = Number(summary.updated) || 0;
+    if (mfUnchanged) {
+      mfUnchanged.textContent = Number(summary.unchanged) || 0;
+    }
+    if (mfLastError) mfLastError.textContent = sync.lastError || "-";
+    if (mfLastErrorRow) {
+      mfLastErrorRow.classList.toggle("hidden", !sync.lastError);
+    }
+
+    const sftpSent = getSftpStatusKey(doc) === "sent";
+    const canRetry =
+      currentDocType !== "splScrap" &&
+      sftpSent &&
+      ["pending", "failed"].includes(status);
+    if (mfRetryBtn) {
+      mfRetryBtn.classList.toggle("hidden", !canRetry);
+      mfRetryBtn.disabled = isMfSubmitting || status === "applying";
+      mfRetryBtn.textContent = isMfSubmitting
+        ? "Actualizando..."
+        : "Reintentar actualizacion";
+    }
+    if (mfCancelBtn) mfCancelBtn.disabled = isMfSubmitting;
+  };
+
+  const resetMfAuditDetails = () => {
+    mfAudits = [];
+    if (mfAuditSelect) mfAuditSelect.innerHTML = "";
+    if (mfAuditSelectorGroup) {
+      mfAuditSelectorGroup.classList.add("hidden");
+    }
+    if (mfAuditDetails) mfAuditDetails.classList.add("hidden");
+    if (mfAuditMeta) mfAuditMeta.textContent = "";
+    if (mfChangeTableBody) mfChangeTableBody.innerHTML = "";
+  };
+
+  const formatAuditValue = (value) => {
+    if (value === null || value === undefined || value === "") {
+      return "(vacio)";
+    }
+    if (typeof value === "object") {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
+  };
+
+  const renderMfAuditDetails = ({ audit, changes }) => {
+    if (!audit) {
+      if (mfAuditDetails) mfAuditDetails.classList.add("hidden");
+      return;
+    }
+
+    const appliedBy = audit.appliedBy;
+    const userLabel = typeof appliedBy === "object"
+      ? appliedBy?.displayName || appliedBy?.email || "-"
+      : userCache.get(String(appliedBy || "")) || String(appliedBy || "-");
+    if (mfAuditMeta) {
+      mfAuditMeta.textContent = [
+        formatDate(audit.createdAt),
+        userLabel,
+        audit.masterFileName || "Master File",
+      ].join(" | ");
+    }
+
+    if (mfChangeTableBody) {
+      mfChangeTableBody.innerHTML = "";
+      const safeChanges = Array.isArray(changes) ? changes : [];
+
+      if (!safeChanges.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 3;
+        cell.textContent = "No hubo registros agregados ni modificados.";
+        row.appendChild(cell);
+        mfChangeTableBody.appendChild(row);
+      }
+
+      safeChanges.forEach((change) => {
+        const row = document.createElement("tr");
+        const actionCell = document.createElement("td");
+        actionCell.textContent = change.action === "added"
+          ? "Agregado"
+          : "Actualizado";
+        const keyCell = document.createElement("td");
+        const recordLabel = change.recordKey || change.partNumber || "-";
+        const sourceRow = Number(change.sourceRow);
+        keyCell.textContent = Number.isFinite(sourceRow)
+          ? `${recordLabel} (fila ${sourceRow})`
+          : recordLabel;
+        const fieldsCell = document.createElement("td");
+        const fields = Array.isArray(change.changedFields)
+          ? change.changedFields
+          : [];
+
+        fields.forEach((fieldChange) => {
+          const item = document.createElement("div");
+          item.className = "mf-change-field";
+          const fieldName = document.createElement("strong");
+          fieldName.textContent = `${fieldChange.field}: `;
+          item.appendChild(fieldName);
+
+          if (change.action === "updated") {
+            const before = document.createElement("span");
+            before.className = "mf-change-before";
+            before.textContent = formatAuditValue(fieldChange.before);
+            const separator = document.createTextNode(" -> ");
+            const after = document.createElement("span");
+            after.className = "mf-change-after";
+            after.textContent = formatAuditValue(fieldChange.after);
+            item.append(before, separator, after);
+          } else {
+            const after = document.createElement("span");
+            after.className = "mf-change-after";
+            after.textContent = formatAuditValue(fieldChange.after);
+            item.appendChild(after);
+          }
+
+          fieldsCell.appendChild(item);
+        });
+
+        row.append(actionCell, keyCell, fieldsCell);
+        mfChangeTableBody.appendChild(row);
+      });
+    }
+
+    if (mfAuditDetails) mfAuditDetails.classList.remove("hidden");
+  };
+
+  const loadMfAuditDetails = async (auditId) => {
+    if (!pendingMfDoc || !auditId || !currentDocType) return;
+    const documentId = String(pendingMfDoc._id);
+
+    try {
+      const response = await fetch(
+        `/api/files/admin-files/${encodeURIComponent(pendingMfDoc._id)}/master-sync/audits/${encodeURIComponent(auditId)}?type=${encodeURIComponent(currentDocType)}`,
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || "No se pudo cargar el detalle MF.");
+      }
+      if (!pendingMfDoc || String(pendingMfDoc._id) !== documentId) {
+        return;
+      }
+      renderMfAuditDetails(data);
+    } catch (error) {
+      showMfModalMessage(error.message || "No se pudo cargar el detalle MF.");
+    }
+  };
+
+  const loadMfAudits = async () => {
+    if (!pendingMfDoc || !currentDocType) return;
+    const documentId = String(pendingMfDoc._id);
+    resetMfAuditDetails();
+
+    try {
+      const response = await fetch(
+        `/api/files/admin-files/${encodeURIComponent(pendingMfDoc._id)}/master-sync/audits?type=${encodeURIComponent(currentDocType)}&limit=20`,
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || "No se pudo cargar la auditoria MF.");
+      }
+      if (!pendingMfDoc || String(pendingMfDoc._id) !== documentId) {
+        return;
+      }
+
+      if (data.masterFileSync) {
+        pendingMfDoc.masterFileSync = data.masterFileSync;
+        renderMfModalDetails(pendingMfDoc);
+      }
+      mfAudits = Array.isArray(data.audits) ? data.audits : [];
+      if (!mfAudits.length) return;
+
+      if (mfAuditSelectorGroup) {
+        mfAuditSelectorGroup.classList.remove("hidden");
+      }
+      if (mfAuditSelect) {
+        mfAudits.forEach((audit) => {
+          const option = document.createElement("option");
+          option.value = audit._id;
+          const summary = audit.summary || {};
+          option.textContent =
+            `${formatDate(audit.createdAt)} | +${Number(summary.added) || 0} / ~${Number(summary.updated) || 0}`;
+          mfAuditSelect.appendChild(option);
+        });
+      }
+
+      const preferredAuditId = String(
+        getMasterFileSync(pendingMfDoc).auditId || "",
+      );
+      const selectedAudit = mfAudits.find(
+        (audit) => String(audit._id) === preferredAuditId,
+      ) || mfAudits[0];
+      if (mfAuditSelect) mfAuditSelect.value = selectedAudit._id;
+      await loadMfAuditDetails(selectedAudit._id);
+    } catch (error) {
+      showMfModalMessage(error.message || "No se pudo cargar la auditoria MF.");
+    }
+  };
+
+  const closeMfModal = () => {
+    if (isMfSubmitting) return;
+    pendingMfDoc = null;
+    resetMfAuditDetails();
+    clearMfModalMessage();
+    if (mfModal) mfModal.classList.add("hidden");
+  };
+
+  const openMfModal = async (doc) => {
+    pendingMfDoc = doc || null;
+    clearMfModalMessage();
+    resetMfAuditDetails();
+    if (mfSourceFileName) {
+      mfSourceFileName.textContent = getAdminDocName(doc);
+    }
+    renderMfModalDetails(doc);
+    if (mfModal) mfModal.classList.remove("hidden");
+    await loadMfAudits();
+  };
+
+  const applyMfResponseToDocument = (data) => {
+    if (!pendingMfDoc || !data || typeof data !== "object") return;
+    const responseDoc = data.document;
+    if (responseDoc && typeof responseDoc === "object") {
+      Object.assign(pendingMfDoc, responseDoc);
+    }
+    const index = allFilesList.findIndex(
+      (doc) => String(doc._id) === String(pendingMfDoc._id),
+    );
+    if (index >= 0) allFilesList[index] = pendingMfDoc;
+    renderSortedDocuments();
+    renderMfModalDetails(pendingMfDoc);
+  };
+
+  const retryMfSync = async () => {
+    if (!pendingMfDoc || !currentDocType || isMfSubmitting) return;
+    clearMfModalMessage();
+    isMfSubmitting = true;
+    renderMfModalDetails(pendingMfDoc);
+
+    try {
+      const response = await fetch(
+        `/api/files/admin-files/${encodeURIComponent(pendingMfDoc._id)}/master-sync/retry?type=${encodeURIComponent(currentDocType)}`,
+        { method: "POST" },
+      );
+      const data = await response.json().catch(() => ({}));
+      applyMfResponseToDocument(data);
+      if (!response.ok) {
+        throw new Error(data.message || "No se pudo actualizar el archivo madre.");
+      }
+      showMfModalMessage(
+        data.message || "Archivo madre actualizado correctamente.",
+        "success",
+      );
+      await loadMfAudits();
+    } catch (error) {
+      showMfModalMessage(
+        error.message || "No se pudo actualizar el archivo madre.",
+      );
+    } finally {
+      isMfSubmitting = false;
+      renderMfModalDetails(pendingMfDoc);
+    }
+  };
+
   const renderEmpty = (message) => {
     tableBody.innerHTML = "";
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = isAdminViewer ? 7 : 6;
+    cell.colSpan = isAdminViewer ? 8 : 7;
     cell.className = "no-jobs";
     cell.textContent = message;
     row.appendChild(cell);
@@ -1029,8 +1459,33 @@
     });
   }
 
+  if (mfCancelBtn) {
+    mfCancelBtn.addEventListener("click", closeMfModal);
+  }
+
+  if (mfRetryBtn) {
+    mfRetryBtn.addEventListener("click", retryMfSync);
+  }
+
+  if (mfAuditSelect) {
+    mfAuditSelect.addEventListener("change", () => {
+      clearMfModalMessage();
+      loadMfAuditDetails(mfAuditSelect.value);
+    });
+  }
+
+  if (mfModal) {
+    mfModal.addEventListener("click", (event) => {
+      if (event.target === mfModal) closeMfModal();
+    });
+  }
+
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (mfModal && !mfModal.classList.contains("hidden")) {
+      closeMfModal();
+      return;
+    }
     if (sftpModal && !sftpModal.classList.contains("hidden")) {
       closeSftpModal();
       return;

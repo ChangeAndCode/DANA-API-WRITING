@@ -178,6 +178,29 @@ const findMasterFiles = async ({
 };
 
 /**
+ * Recupera el archivo madre listo mas reciente para una sede y tipo.
+ * La validacion de que pertenezca exclusivamente a la sede se realiza
+ * en el servicio para poder devolver un error de negocio explicito.
+ */
+const findLatestReadyMasterFileForSiteAndType =
+  async ({
+    site,
+    masterType,
+  }) => {
+    return MasterFile.findOne({
+      sites: site,
+      masterType,
+      status: "ready",
+    })
+      .sort({
+        lastImportedAt: -1,
+        updatedAt: -1,
+        createdAt: -1,
+      })
+      .lean();
+  };
+
+/**
  * Elimina todos los registros internos asociados
  * con un archivo madre.
  */
@@ -211,6 +234,49 @@ const findActiveMasterRecordsByMasterFileId =
       )
       .lean();
   };
+
+/**
+ * Recupera solo los registros que pueden coincidir con las filas
+ * recibidas durante una sincronizacion posterior al SFTP.
+ */
+const findActiveMasterRecordsForSync = async ({
+  masterFileId,
+  partNumbers,
+  session = null,
+}) => {
+  const safePartNumbers = Array.isArray(partNumbers)
+    ? [...new Set(partNumbers.filter(Boolean))]
+    : [];
+
+  if (!safePartNumbers.length) return [];
+
+  const query = MasterRecord.find({
+    masterFileId,
+    partNumberNormalized: {
+      $in: safePartNumbers,
+    },
+    isDeleted: false,
+  })
+    .sort({
+      sourceRow: 1,
+    })
+    .select([
+      "_id",
+      "masterFileId",
+      "masterType",
+      "sites",
+      "partNumber",
+      "partNumberNormalized",
+      "sourceRow",
+      "rawCells",
+      "normalizedValues",
+      "validationWarnings",
+    ].join(" "))
+    .lean();
+
+  if (session) query.session(session);
+  return query;
+};
 
 /**
  * Recupera los registros necesarios para el editor.
@@ -610,7 +676,9 @@ module.exports = {
   updateMasterFileByIdAndRevision,
   findMasterFileById,
   findMasterFiles,
+  findLatestReadyMasterFileForSiteAndType,
   findActiveMasterRecordsByMasterFileId,
+  findActiveMasterRecordsForSync,
   findActiveMasterRecordsForEditor,
   findMasterRecordsByPartNumber,
   findBomMasterRecordsForBatch,

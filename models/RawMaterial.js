@@ -1,5 +1,8 @@
 const mongoose = require("mongoose");
 const { sftpDeliverySchema } = require("./sftpDeliverySchema");
+const {
+  createMasterFileSyncSchema,
+} = require("./masterFileSyncSchema");
 
 // Helper function to create schema fields from your spec
 const ALLOW_EMPTY_MANDATORY_FIELDS =
@@ -285,6 +288,10 @@ rawMaterialMongooseSchema.add({
   sourceJobId: { type: mongoose.Schema.Types.ObjectId, ref: "ConversionJob" },
   rows: { type: [mongoose.Schema.Types.Mixed], default: [] },
   sftpDelivery: { type: sftpDeliverySchema, default: () => ({}) },
+  masterFileSync: {
+    type: createMasterFileSyncSchema(),
+    default: () => ({}),
+  },
 });
 
 rawMaterialMongooseSchema.statics.getSchemaSpec = () => rawMaterialSchemaSpec;

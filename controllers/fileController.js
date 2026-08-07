@@ -296,27 +296,69 @@ const toPublicSftpDelivery = (value) => {
   };
 };
 
-const toPublicAdminFileDocument = (value) => {
+const getAdminFileTypeByModel = (model) => {
+  const match = Object.entries(ADMIN_FILE_MODELS).find(
+    ([, candidate]) => candidate === model,
+  );
+  return match?.[0] || "";
+};
+
+const getDefaultMasterFileSyncStatus = (documentType) =>
+  documentType === "splScrap" ? "not_applicable" : "pending";
+
+const toPublicMasterFileSync = (value, documentType) => {
+  const sync = toPlainObject(value);
+  const summary = toPlainObject(sync.summary);
+
+  return {
+    status:
+      sync.status || getDefaultMasterFileSyncStatus(documentType),
+    attempts: Number(sync.attempts) || 0,
+    lastAttemptAt: sync.lastAttemptAt || null,
+    appliedAt: sync.appliedAt || null,
+    lastAttemptBy: sync.lastAttemptBy || null,
+    lastError: sync.lastError || "",
+    masterFileId: sync.masterFileId || null,
+    masterFileName: sync.masterFileName || "",
+    auditId: sync.auditId || null,
+    summary: {
+      total: Number(summary.total) || 0,
+      added: Number(summary.added) || 0,
+      updated: Number(summary.updated) || 0,
+      unchanged: Number(summary.unchanged) || 0,
+    },
+  };
+};
+
+const toPublicAdminFileDocument = (value, documentType = "") => {
   const document = toPlainObject(value);
   return {
     ...document,
     sftpDelivery: toPublicSftpDelivery(document.sftpDelivery),
+    masterFileSync: toPublicMasterFileSync(
+      document.masterFileSync,
+      documentType,
+    ),
   };
 };
 
 const getSftpDocumentSummary = async (model, id) => {
+  const documentType = getAdminFileTypeByModel(model);
   const document = await model
     .findById(id)
     .select(
-      "adminFileName lastDownloadedName site createdBy updatedBy createdAt updatedAt sftpDelivery",
+      "adminFileName lastDownloadedName site createdBy updatedBy createdAt updatedAt sftpDelivery masterFileSync",
     )
     .populate("createdBy", "displayName email")
     .populate("updatedBy", "displayName email")
     .populate("sftpDelivery.lastAttemptBy", "displayName email")
     .populate("sftpDelivery.lastDryRunBy", "displayName email")
+    .populate("masterFileSync.lastAttemptBy", "displayName email")
     .lean();
 
-  return document ? toPublicAdminFileDocument(document) : null;
+  return document
+    ? toPublicAdminFileDocument(document, documentType)
+    : null;
 };
 
 const isSftpOperationInProgress = (document) => {
@@ -389,6 +431,164 @@ const markSftpOperationFailed = async ({
   );
 };
 
+const isMasterFileSyncInProgress = (document) => {
+  const sync = toPlainObject(document?.masterFileSync);
+  return sync.status === "applying";
+};
+
+const markMasterFileSyncFailed = async ({
+  model,
+  id,
+  message,
+  userId,
+  incrementAttempt = false,
+}) => {
+  const update = {
+    $set: {
+      "masterFileSync.status": "failed",
+      "masterFileSync.lastAttemptAt": new Date(),
+      "masterFileSync.lastAttemptBy": userId,
+      "masterFileSync.lastError": sanitizeStoredSftpError(message),
+      "masterFileSync.appliedAt": null,
+    },
+  };
+
+  if (incrementAttempt) {
+    update.$inc = {
+      "masterFileSync.attempts": 1,
+    };
+  }
+
+  await model.updateOne(
+    { _id: id },
+    update,
+    { timestamps: false },
+  );
+};
+
+const getPublicMasterFileSyncErrorMessage = (error) => {
+  const statusCode = Number(error?.statusCode);
+  if (
+    Number.isInteger(statusCode) &&
+    statusCode >= 400 &&
+    statusCode < 500 &&
+    error?.message
+  ) {
+    return error.message;
+  }
+  return "No se pudo actualizar el archivo madre.";
+};
+
+const applyPreparedMasterSyncForAdminDocument = async ({
+  model,
+  id,
+  documentType,
+  preparedSync,
+  user,
+  adminFileName,
+  sftpRemoteFileName,
+}) => {
+  if (!preparedSync?.required) {
+    return {
+      required: false,
+    };
+  }
+
+  const userId = user?.id || user?._id;
+  const attemptAt = new Date();
+  const lock = await model.updateOne(
+    {
+      _id: id,
+      "masterFileSync.status": { $ne: "applying" },
+    },
+    {
+      $set: {
+        "masterFileSync.status": "applying",
+        "masterFileSync.lastAttemptAt": attemptAt,
+        "masterFileSync.lastAttemptBy": userId,
+        "masterFileSync.lastError": "",
+        "masterFileSync.appliedAt": null,
+      },
+      $inc: {
+        "masterFileSync.attempts": 1,
+      },
+    },
+    { timestamps: false },
+  );
+
+  if (!lock.modifiedCount) {
+    throw createHttpError(
+      409,
+      "La actualizacion del archivo madre ya esta en proceso.",
+      { code: "MASTER_SYNC_ALREADY_IN_PROGRESS" },
+    );
+  }
+
+  let result;
+  try {
+    result = await masterFileService.applyPreparedAdminFileMasterSync({
+      preparedSync,
+      user,
+      auditContext: {
+        adminDocumentId: id,
+        adminFileName,
+        sftpRemoteFileName,
+      },
+    });
+  } catch (error) {
+    try {
+      await markMasterFileSyncFailed({
+        model,
+        id,
+        message: getPublicMasterFileSyncErrorMessage(error),
+        userId,
+      });
+    } catch {
+      console.error("[MF] No se guardo el estado fallido.", {
+        documentId: String(id),
+        documentType,
+        code: "MASTER_SYNC_STATUS_PERSIST_FAILED",
+      });
+    }
+    throw error;
+  }
+
+  const appliedAt = new Date();
+  const statusUpdate = await model.updateOne(
+    {
+      _id: id,
+      "masterFileSync.status": "applying",
+    },
+    {
+      $set: {
+        "masterFileSync.status": "applied",
+        "masterFileSync.appliedAt": appliedAt,
+        "masterFileSync.lastError": "",
+        "masterFileSync.masterFileId": result.masterFileId,
+        "masterFileSync.masterFileName": result.masterFileName,
+        "masterFileSync.auditId": result.auditId,
+        "masterFileSync.summary": {
+          total: result.total,
+          added: result.added,
+          updated: result.updated,
+          unchanged: result.unchanged,
+        },
+      },
+    },
+    { timestamps: false },
+  );
+
+  if (!statusUpdate.modifiedCount) {
+    throw createHttpError(
+      500,
+      "El archivo madre se actualizo, pero no se pudo guardar el estado MF.",
+      { code: "MASTER_SYNC_STATUS_PERSIST_FAILED" },
+    );
+  }
+
+  return result;
+};
+
 const cloneAdminFileRows = (rows) => {
   if (!Array.isArray(rows)) return [];
   return rows.map((row) => {
@@ -427,6 +627,9 @@ const createAdminFileDocument = async ({
     updatedBy: userId,
     sourceJobId: sourceJobId || undefined,
     rows: cloneAdminFileRows(rows),
+    masterFileSync: {
+      status: getDefaultMasterFileSyncStatus(documentType),
+    },
   });
 
   return {
@@ -1130,7 +1333,7 @@ const getAdminFilesByType = async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
 
     const selectFields =
-      "adminFileName lastDownloadedName site createdBy updatedBy createdAt updatedAt sftpDelivery";
+      "adminFileName lastDownloadedName site createdBy updatedBy createdAt updatedAt sftpDelivery masterFileSync";
     const docs = await model
       .find(query)
       .sort({ updatedAt: -1, createdAt: -1 })
@@ -1140,10 +1343,13 @@ const getAdminFilesByType = async (req, res) => {
       .populate("updatedBy", "displayName email")
       .populate("sftpDelivery.lastAttemptBy", "displayName email")
       .populate("sftpDelivery.lastDryRunBy", "displayName email")
+      .populate("masterFileSync.lastAttemptBy", "displayName email")
       .lean();
 
     return res.status(200).json({
-      documents: docs.map(toPublicAdminFileDocument),
+      documents: docs.map((doc) =>
+        toPublicAdminFileDocument(doc, type)
+      ),
     });
   } catch (error) {
     console.error("Error al listar archivos admin:", error);
@@ -1170,7 +1376,7 @@ const getAdminFileById = async (req, res) => {
     });
 
     return res.status(200).json({
-      document: toPublicAdminFileDocument(doc),
+      document: toPublicAdminFileDocument(doc, type),
     });
   } catch (error) {
     console.error("Error al obtener archivo admin:", error);
@@ -1285,6 +1491,15 @@ const sendAdminFileViaSftp = async (req, res) => {
       return res.status(409).json({
         message: "El archivo ya tiene un envio SFTP en proceso.",
         code: "SFTP_ALREADY_IN_PROGRESS",
+        dryRun: isDryRun,
+        document: await getSftpDocumentSummary(model, id),
+      });
+    }
+
+    if (isMasterFileSyncInProgress(document)) {
+      return res.status(409).json({
+        message: "El archivo ya tiene una actualizacion MF en proceso.",
+        code: "MASTER_SYNC_ALREADY_IN_PROGRESS",
         dryRun: isDryRun,
         document: await getSftpDocumentSummary(model, id),
       });
@@ -1429,6 +1644,22 @@ const sendAdminFileViaSftp = async (req, res) => {
           "sftpDelivery.sentAt": null,
           "sftpDelivery.remoteFileName": null,
           "sftpDelivery.remotePath": null,
+          ...(type === "splScrap"
+            ? {}
+            : {
+                "masterFileSync.status": "pending",
+                "masterFileSync.lastError": "",
+                "masterFileSync.appliedAt": null,
+                "masterFileSync.masterFileId": null,
+                "masterFileSync.masterFileName": "",
+                "masterFileSync.auditId": null,
+                "masterFileSync.summary": {
+                  total: 0,
+                  added: 0,
+                  updated: 0,
+                  unchanged: 0,
+                },
+              }),
         },
         $inc: {
           "sftpDelivery.attempts": 1,
@@ -1478,6 +1709,61 @@ const sendAdminFileViaSftp = async (req, res) => {
       return res.status(statusCode).json({
         message: publicMessage,
         code: error.code || "ADMIN_FILE_EXPORT_FAILED",
+        dryRun: false,
+        document: await getSftpDocumentSummary(model, id),
+      });
+    }
+
+    let preparedMasterSync;
+    try {
+      preparedMasterSync =
+        await masterFileService.prepareAdminFileMasterSync({
+          documentType: type,
+          rows: lockedDocument.rows,
+          site: targetSite,
+          user: req.user,
+        });
+    } catch (error) {
+      const statusCode = error.statusCode || 500;
+      const publicMessage =
+        statusCode < 500
+          ? error.message
+          : "No se pudo preparar la actualizacion del archivo madre.";
+
+      await markSftpOperationFailed({
+        model,
+        id,
+        message: publicMessage,
+      });
+
+      if (type !== "splScrap") {
+        try {
+          await markMasterFileSyncFailed({
+            model,
+            id,
+            message: publicMessage,
+            userId,
+            incrementAttempt: true,
+          });
+        } catch {
+          console.error("[MF] No se guardo el error de preparacion.", {
+            documentId: String(id),
+            documentType: type,
+            code: "MASTER_SYNC_STATUS_PERSIST_FAILED",
+          });
+        }
+      }
+
+      console.warn("[SFTP] No se preparo el archivo madre.", {
+        documentId: String(id),
+        documentType: type,
+        site: targetSite,
+        code: error.code || "MASTER_SYNC_PREPARATION_FAILED",
+      });
+
+      return res.status(statusCode).json({
+        message: publicMessage,
+        code: error.code || "MASTER_SYNC_PREPARATION_FAILED",
         dryRun: false,
         document: await getSftpDocumentSummary(model, id),
       });
@@ -1582,10 +1868,82 @@ const sendAdminFileViaSftp = async (req, res) => {
       });
     }
 
+    let masterFileUpdate;
+    try {
+      masterFileUpdate =
+        await applyPreparedMasterSyncForAdminDocument({
+          model,
+          id,
+          documentType: type,
+          preparedSync: preparedMasterSync,
+          user: req.user,
+          adminFileName: lockedDocument.adminFileName,
+          sftpRemoteFileName: uploadResult.remoteFileName,
+        });
+    } catch (error) {
+      const statusCode =
+        Number.isInteger(error.statusCode) &&
+        error.statusCode >= 400 &&
+        error.statusCode < 500
+          ? error.statusCode
+          : 500;
+      let responseDocument = null;
+
+      try {
+        responseDocument = await getSftpDocumentSummary(model, id);
+      } catch {
+        // The transfer and master file error remain the primary result.
+      }
+
+      if (type !== "splScrap") {
+        try {
+          await markMasterFileSyncFailed({
+            model,
+            id,
+            message: getPublicMasterFileSyncErrorMessage(error),
+            userId,
+          });
+          responseDocument = await getSftpDocumentSummary(model, id);
+        } catch {
+          // The transfer and original master file error remain primary.
+        }
+      }
+
+      console.error(
+        "[SFTP] Archivo enviado sin actualizar el archivo madre.",
+        {
+          documentId: String(id),
+          documentType: type,
+          site: targetSite,
+          code: error.code || "MASTER_SYNC_FAILED",
+        },
+      );
+
+      return res.status(statusCode).json({
+        message:
+          "El archivo fue enviado por SFTP, pero no se pudo actualizar el archivo madre. No lo reenvies hasta revisar el error.",
+        code: error.code || "MASTER_SYNC_FAILED",
+        dryRun: false,
+        transferCompleted: true,
+        masterFileUpdateCompleted: false,
+        sftpDelivery: sentDelivery,
+        document: responseDocument,
+      });
+    }
+
     console.info("[SFTP] Archivo enviado.", {
       documentId: String(id),
       documentType: type,
       site: targetSite,
+      masterFileUpdate:
+        masterFileUpdate?.required
+          ? {
+              masterFileId: masterFileUpdate.masterFileId,
+              added: masterFileUpdate.added,
+              updated: masterFileUpdate.updated,
+              unchanged: masterFileUpdate.unchanged,
+            }
+          : null,
     });
 
     let responseDocument = null;
@@ -1600,11 +1958,16 @@ const sendAdminFileViaSftp = async (req, res) => {
       });
     }
 
+    const successMessage = masterFileUpdate?.required
+      ? `Archivo enviado por SFTP correctamente. Archivo madre actualizado: ${masterFileUpdate.added} agregados, ${masterFileUpdate.updated} actualizados y ${masterFileUpdate.unchanged} sin cambios.`
+      : "Archivo enviado por SFTP correctamente.";
+
     return res.status(200).json({
-      message: "Archivo enviado por SFTP correctamente.",
+      message: successMessage,
       dryRun: false,
       connectionAttempts: uploadResult.connectionAttempts,
       sftpDelivery: sentDelivery,
+      masterFileUpdate,
       document: responseDocument,
     });
   } catch (error) {
@@ -1625,6 +1988,182 @@ const sendAdminFileViaSftp = async (req, res) => {
       message: publicMessage,
       code: error.code || "SFTP_REQUEST_FAILED",
       dryRun: isDryRun,
+    });
+  }
+};
+
+const getAdminFileMasterSyncAudits = async (req, res) => {
+  const { id } = req.params;
+  const { type } = req.query || {};
+
+  try {
+    const { doc } = await getAdminFileDocumentOrThrow({
+      id,
+      type,
+      user: req.user,
+      lean: true,
+    });
+    const audits =
+      await masterFileService.listAdminFileMasterSyncAudits({
+        adminDocumentId: id,
+        documentType: type,
+        user: req.user,
+        limit: req.query.limit,
+      });
+
+    return res.status(200).json({
+      masterFileSync: toPublicMasterFileSync(
+        doc.masterFileSync,
+        type,
+      ),
+      audits,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      message:
+        error.statusCode && error.statusCode < 500
+          ? error.message
+          : "No se pudo consultar la auditoria MF.",
+      code: error.code || "MASTER_SYNC_AUDIT_READ_FAILED",
+    });
+  }
+};
+
+const getAdminFileMasterSyncAuditDetails = async (req, res) => {
+  const { id, auditId } = req.params;
+  const { type } = req.query || {};
+
+  try {
+    await getAdminFileDocumentOrThrow({
+      id,
+      type,
+      user: req.user,
+      lean: true,
+    });
+    const result =
+      await masterFileService.getAdminFileMasterSyncAuditDetails({
+        auditId,
+        adminDocumentId: id,
+        documentType: type,
+        user: req.user,
+      });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      message:
+        error.statusCode && error.statusCode < 500
+          ? error.message
+          : "No se pudo consultar el detalle de auditoria MF.",
+      code: error.code || "MASTER_SYNC_AUDIT_DETAIL_FAILED",
+    });
+  }
+};
+
+const retryAdminFileMasterSync = async (req, res) => {
+  const { id } = req.params;
+  const { type } = req.query || {};
+
+  if (type === "splScrap") {
+    return res.status(409).json({
+      message: "Packing List no actualiza archivos madre.",
+      code: "MASTER_SYNC_NOT_APPLICABLE",
+    });
+  }
+
+  try {
+    const { model, doc } = await getAdminFileDocumentOrThrow({
+      id,
+      type,
+      user: req.user,
+    });
+    const delivery = toPlainObject(doc.sftpDelivery);
+    const sync = toPublicMasterFileSync(doc.masterFileSync, type);
+
+    if (delivery.status !== "sent") {
+      throw createHttpError(
+        409,
+        "El archivo no tiene un envio SFTP exitoso para reutilizar.",
+        { code: "MASTER_SYNC_SFTP_NOT_SENT" },
+      );
+    }
+
+    if (sync.status === "applying") {
+      throw createHttpError(
+        409,
+        "La actualizacion del archivo madre ya esta en proceso.",
+        { code: "MASTER_SYNC_ALREADY_IN_PROGRESS" },
+      );
+    }
+
+    if (sync.status === "applied") {
+      throw createHttpError(
+        409,
+        "La actualizacion del archivo madre ya fue aplicada.",
+        { code: "MASTER_SYNC_ALREADY_APPLIED" },
+      );
+    }
+
+    const targetSite = normalizeSftpSite(
+      delivery.site || doc.site,
+    );
+    let preparedSync;
+
+    try {
+      preparedSync =
+        await masterFileService.prepareAdminFileMasterSync({
+          documentType: type,
+          rows: doc.rows,
+          site: targetSite,
+          user: req.user,
+        });
+    } catch (error) {
+      await markMasterFileSyncFailed({
+        model,
+        id,
+        message: getPublicMasterFileSyncErrorMessage(error),
+        userId: req.user?.id || req.user?._id,
+        incrementAttempt: true,
+      });
+      throw error;
+    }
+
+    const masterFileUpdate =
+      await applyPreparedMasterSyncForAdminDocument({
+        model,
+        id,
+        documentType: type,
+        preparedSync,
+        user: req.user,
+        adminFileName: doc.adminFileName,
+        sftpRemoteFileName: delivery.remoteFileName,
+      });
+    const responseDocument =
+      await getSftpDocumentSummary(model, id);
+
+    return res.status(200).json({
+      message: `Archivo madre actualizado: ${masterFileUpdate.added} agregados, ${masterFileUpdate.updated} actualizados y ${masterFileUpdate.unchanged} sin cambios.`,
+      masterFileUpdate,
+      document: responseDocument,
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      message:
+        statusCode < 500
+          ? error.message
+          : "No se pudo reintentar la actualizacion del archivo madre.",
+      code: error.code || "MASTER_SYNC_RETRY_FAILED",
+      document: await (async () => {
+        try {
+          const model = getAdminFileModelByType(type);
+          return model
+            ? await getSftpDocumentSummary(model, id)
+            : null;
+        } catch {
+          return null;
+        }
+      })(),
     });
   }
 };
@@ -1722,6 +2261,13 @@ const updateAdminFileById = async (req, res) => {
       });
     }
 
+    if (isMasterFileSyncInProgress(doc)) {
+      return res.status(409).json({
+        message: "No puedes actualizar el archivo durante una actualizacion MF.",
+        code: "MASTER_SYNC_ALREADY_IN_PROGRESS",
+      });
+    }
+
     const validationResult = await fileConversionService.validateManualRowsForDocument(
       rows,
       type,
@@ -1775,6 +2321,25 @@ const updateAdminFileById = async (req, res) => {
     doc.sftpDelivery.lastError = "";
     doc.sftpDelivery.remoteFileName = undefined;
     doc.sftpDelivery.remotePath = undefined;
+    if (!doc.masterFileSync) {
+      doc.masterFileSync = {};
+    }
+    doc.masterFileSync.status =
+      getDefaultMasterFileSyncStatus(type);
+    doc.masterFileSync.attempts = 0;
+    doc.masterFileSync.lastAttemptAt = undefined;
+    doc.masterFileSync.appliedAt = undefined;
+    doc.masterFileSync.lastAttemptBy = undefined;
+    doc.masterFileSync.lastError = "";
+    doc.masterFileSync.masterFileId = undefined;
+    doc.masterFileSync.masterFileName = "";
+    doc.masterFileSync.auditId = undefined;
+    doc.masterFileSync.summary = {
+      total: 0,
+      added: 0,
+      updated: 0,
+      unchanged: 0,
+    };
 
     await doc.save();
 
@@ -1812,6 +2377,13 @@ const deleteAdminFileById = async (req, res) => {
       });
     }
 
+    if (isMasterFileSyncInProgress(doc)) {
+      return res.status(409).json({
+        message: "No puedes eliminar el archivo durante una actualizacion MF.",
+        code: "MASTER_SYNC_ALREADY_IN_PROGRESS",
+      });
+    }
+
     await model.deleteOne({ _id: id });
     return res.status(200).json({ message: "Archivo eliminado." });
   } catch (error) {
@@ -1838,6 +2410,9 @@ module.exports = {
   getAdminFileById,
   downloadAdminFileById,
   sendAdminFileViaSftp,
+  getAdminFileMasterSyncAudits,
+  getAdminFileMasterSyncAuditDetails,
+  retryAdminFileMasterSync,
   copyAdminFileById,
   updateAdminFileById,
   deleteAdminFileById,

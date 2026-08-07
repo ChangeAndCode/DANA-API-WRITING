@@ -94,6 +94,84 @@ body {
   text-align: center;
 }
 
+#adminFilesTable td.mf-status-cell {
+  text-align: center;
+}
+
+#adminFilesTable th.mf-status-header,
+#adminFilesTable td.mf-status-cell {
+  width: 58px;
+  min-width: 58px;
+  max-width: 58px;
+}
+
+.mf-status-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.mf-status-button:hover,
+.mf-status-button:focus-visible {
+  background: #eef2f6;
+  outline: 2px solid #94a3b8;
+  outline-offset: 2px;
+}
+
+.mf-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  vertical-align: middle;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
+}
+
+.mf-status-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.mf-status-not-applicable {
+  background: #9ca3af;
+}
+
+.mf-status-pending {
+  color: #422006;
+  background: #facc15;
+}
+
+.mf-status-applying {
+  background: #3b82f6;
+}
+
+.mf-status-applying svg {
+  animation: mf-status-spin 1.2s linear infinite;
+}
+
+.mf-status-applied {
+  background: #22c55e;
+}
+
+.mf-status-failed {
+  background: #ef4444;
+}
+
+@keyframes mf-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .sftp-status-indicator {
   display: inline-block;
   width: 20px;
@@ -668,15 +746,23 @@ h2 {
   font-size: 0.92em;
 }
 
-.sftp-modal {
+.sftp-modal,
+.mf-modal {
   max-width: 500px;
+}
+
+.mf-modal {
+  max-width: 760px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
 }
 
 .sftp-file-summary strong {
   overflow-wrap: anywhere;
 }
 
-.sftp-modal-status {
+.sftp-modal-status,
+.mf-modal-status {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -688,11 +774,16 @@ h2 {
   font-weight: 600;
 }
 
+.mf-modal-status .mf-status-icon {
+  flex: 0 0 24px;
+}
+
 .sftp-modal-status .sftp-status-indicator {
   flex: 0 0 20px;
 }
 
-.sftp-modal .modal-form-group select {
+.sftp-modal .modal-form-group select,
+.mf-modal .modal-form-group select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid #d0d7de;
@@ -702,13 +793,15 @@ h2 {
   box-sizing: border-box;
 }
 
-.sftp-modal .modal-form-group select:focus {
+.sftp-modal .modal-form-group select:focus,
+.mf-modal .modal-form-group select:focus {
   outline: none;
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
-.sftp-modal .modal-form-group select:disabled {
+.sftp-modal .modal-form-group select:disabled,
+.mf-modal .modal-form-group select:disabled {
   color: #4b5563;
   background: #f3f4f6;
   cursor: not-allowed;
@@ -740,6 +833,97 @@ h2 {
   color: #2c3e50;
   font-size: 0.86em;
   overflow-wrap: anywhere;
+}
+
+.mf-audit-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.mf-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.mf-summary-grid div {
+  padding: 10px;
+  border-radius: 8px;
+  background: #eef6ff;
+  text-align: center;
+}
+
+.mf-summary-grid dt {
+  color: #667085;
+  font-size: 0.75em;
+  font-weight: 600;
+}
+
+.mf-summary-grid dd {
+  margin: 4px 0 0;
+  color: #1d4ed8;
+  font-size: 1.1em;
+  font-weight: 700;
+}
+
+.mf-audit-details {
+  margin-bottom: 14px;
+}
+
+.mf-audit-meta {
+  margin-bottom: 8px;
+  color: #475467;
+  font-size: 0.84em;
+}
+
+.mf-change-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+}
+
+.mf-change-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82em;
+}
+
+.mf-change-table th,
+.mf-change-table td {
+  padding: 8px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: top;
+}
+
+.mf-change-table th {
+  position: sticky;
+  top: 0;
+  background: #f5f8fb;
+  z-index: 1;
+}
+
+.mf-change-field {
+  margin-bottom: 5px;
+}
+
+.mf-change-field:last-child {
+  margin-bottom: 0;
+}
+
+.mf-change-before {
+  color: #b42318;
+}
+
+.mf-change-after {
+  color: #176b3a;
+}
+
+.mf-retry-btn {
+  color: #111 !important;
+  background: #facc15 !important;
+  border: none !important;
 }
 
 .sftp-last-error,
@@ -779,6 +963,10 @@ h2 {
 
 @media (max-width: 560px) {
   .sftp-audit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mf-summary-grid {
     grid-template-columns: 1fr;
   }
 }
