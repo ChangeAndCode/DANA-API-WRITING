@@ -31,6 +31,27 @@ const masterFilesTableWrapper = document.getElementById(
 const masterFilesTableBody = document.getElementById(
     "masterFilesTableBody",
   );
+const masterFilterName = document.getElementById(
+  "masterFilterName",
+);
+const masterFilterDate = document.getElementById(
+  "masterFilterDate",
+);
+const masterFilterUser = document.getElementById(
+  "masterFilterUser",
+);
+const masterFilterSite = document.getElementById(
+  "masterFilterSite",
+);
+const masterResetFiltersButton = document.getElementById(
+  "masterResetFiltersButton",
+);
+const masterSortNameButton = document.getElementById(
+  "masterSortNameButton",
+);
+const masterSortNameIcon = document.getElementById(
+  "masterSortNameIcon",
+);
 const masterDeleteModal = document.getElementById(
     "masterDeleteModal",
   );
@@ -68,6 +89,7 @@ const masterCopyConfirmButton = document.getElementById(
 let currentUser = null;
 let uploadInProgress = false;
 let availableMasterFiles = [];
+let masterSortMode = 0;
 let pendingMasterFileDelete = null;
 let pendingMasterFileCopy = null;
 
@@ -340,10 +362,217 @@ const openMasterCopyModal = (
   masterCopyFileNameInput.select();
 };
 
+const normalizeMasterFilterText = (value) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+const masterFilterIncludes = (
+  value,
+  searchValue,
+) =>
+  normalizeMasterFilterText(value).includes(
+    normalizeMasterFilterText(searchValue),
+  );
+
+const getMasterFileName = (masterFile) =>
+  masterFile.name ||
+  masterFile.originalFileName ||
+  "";
+
+const getMasterFileDate = (masterFile) =>
+  masterFile.lastImportedAt ||
+  masterFile.updatedAt ||
+  masterFile.createdAt ||
+  null;
+
+const getMasterFileDateSearchValues = (
+  masterFile,
+) => {
+  const value = getMasterFileDate(masterFile);
+  const date = new Date(value);
+
+  if (
+    !value ||
+    Number.isNaN(date.getTime())
+  ) {
+    return [];
+  }
+
+  const day = date.getDate();
+  const month = date.getMonth() + 1;
+  const year = date.getFullYear();
+
+  return [
+    formatDate(value),
+    `${day}/${month}/${year}`,
+    `${String(day).padStart("2", "0")}/${String(
+      month,
+    ).padStart("2", "0")}/${year}`,
+    `${year}-${String(month).padStart(
+      2,
+      "0",
+    )}-${String(day).padStart(2, "0")}`,
+  ];
+};
+
+const getMasterFileUserSearchValues = (
+  masterFile,
+) => {
+  const uploadedBy =
+    masterFile.uploadedBy;
+
+  if (
+    uploadedBy &&
+    typeof uploadedBy === "object"
+  ) {
+    return [
+      uploadedBy.displayName,
+      uploadedBy.email,
+      uploadedBy._id,
+      uploadedBy.id,
+    ].filter(Boolean);
+  }
+
+  return [uploadedBy].filter(Boolean);
+};
+
+const getVisibleMasterFiles = () => {
+  const nameFilter =
+    masterFilterName?.value || "";
+  const dateFilter =
+    masterFilterDate?.value || "";
+  const userFilter =
+    masterFilterUser?.value || "";
+  const siteFilter =
+    masterFilterSite?.value || "";
+
+  const filteredMasterFiles =
+    availableMasterFiles.filter(
+      (masterFile) => {
+        const matchesName =
+          !nameFilter ||
+          masterFilterIncludes(
+            getMasterFileName(masterFile),
+            nameFilter,
+          );
+
+        const matchesDate =
+          !dateFilter ||
+          getMasterFileDateSearchValues(
+            masterFile,
+          ).some((dateValue) =>
+            masterFilterIncludes(
+              dateValue,
+              dateFilter,
+            ),
+          );
+
+        const matchesUser =
+          !userFilter ||
+          getMasterFileUserSearchValues(
+            masterFile,
+          ).some((userValue) =>
+            masterFilterIncludes(
+              userValue,
+              userFilter,
+            ),
+          );
+
+        const matchesSite =
+          !siteFilter ||
+          (Array.isArray(masterFile.sites) &&
+            masterFile.sites.some(
+              (site) =>
+                normalizeMasterFilterText(
+                  site,
+                ) ===
+                normalizeMasterFilterText(
+                  siteFilter,
+                ),
+            ));
+
+        return (
+          matchesName &&
+          matchesDate &&
+          matchesUser &&
+          matchesSite
+        );
+      },
+    );
+
+  filteredMasterFiles.sort((first, second) => {
+    if (masterSortMode === 0) {
+      return (
+        new Date(
+          getMasterFileDate(second) || 0,
+        ).getTime() -
+        new Date(
+          getMasterFileDate(first) || 0,
+        ).getTime()
+      );
+    }
+
+    const comparison =
+      getMasterFileName(first).localeCompare(
+        getMasterFileName(second),
+        "es",
+        {
+          sensitivity: "base",
+        },
+      );
+
+    return masterSortMode === 1
+      ? comparison
+      : -comparison;
+  });
+
+  return filteredMasterFiles;
+};
+
+const updateMasterSortIcon = () => {
+  if (!masterSortNameIcon) {
+    return;
+  }
+
+  if (masterSortMode === 0) {
+    masterSortNameIcon.src =
+      "/src/icons/ordenar-flechas-par-apuntando-hacia-arriba-y-hacia-abajo.png";
+  } else if (masterSortMode === 1) {
+    masterSortNameIcon.src =
+      "/src/icons/caret-flecha-hacia-arriba.png";
+  } else {
+    masterSortNameIcon.src =
+      "/src/icons/caret-abajo.png";
+  }
+};
+
 const renderMasterFiles = () => {
   masterFilesTableBody.innerHTML = "";
+  const displayedMasterFiles =
+    getVisibleMasterFiles();
 
-  if (availableMasterFiles.length === 0) {
+  if (displayedMasterFiles.length === 0) {
+    const emptyTitle =
+      masterFilesEmptyState.querySelector("h3");
+    const emptyDescription =
+      masterFilesEmptyState.querySelector("p");
+
+    if (emptyTitle) {
+      emptyTitle.textContent =
+        availableMasterFiles.length > 0
+          ? "No hay coincidencias"
+          : "Aun no hay archivos madre disponibles";
+    }
+
+    if (emptyDescription) {
+      emptyDescription.textContent =
+        availableMasterFiles.length > 0
+          ? "Ajusta o limpia los filtros para ver los archivos disponibles."
+          : "Aqui apareceran los archivos madre disponibles para tu sede.";
+    }
     masterFilesEmptyState.classList.remove(
       "hidden",
     );
@@ -366,7 +595,7 @@ const renderMasterFiles = () => {
   const isAdmin =
     currentUser?.role === "admin";
 
-  availableMasterFiles.forEach(
+  displayedMasterFiles.forEach(
     (masterFile) => {
       const row =
         document.createElement("tr");
@@ -412,7 +641,8 @@ const renderMasterFiles = () => {
       dateCell.textContent =
         formatDate(
           masterFile.lastImportedAt ||
-          masterFile.updatedAt,
+          masterFile.updatedAt ||
+          masterFile.createdAt,
         );
 
       row.appendChild(dateCell);
@@ -1189,6 +1419,55 @@ const confirmMasterFileDelete =
 document.addEventListener(
   "DOMContentLoaded",
   async () => {
+    [
+      masterFilterName,
+      masterFilterDate,
+      masterFilterUser,
+    ].forEach((filterInput) => {
+      filterInput?.addEventListener(
+        "input",
+        renderMasterFiles,
+      );
+    });
+
+    masterFilterSite?.addEventListener(
+      "change",
+      renderMasterFiles,
+    );
+
+    masterResetFiltersButton?.addEventListener(
+      "click",
+      () => {
+        [
+          masterFilterName,
+          masterFilterDate,
+          masterFilterUser,
+        ].forEach((filterInput) => {
+          if (filterInput) {
+            filterInput.value = "";
+          }
+        });
+
+        if (masterFilterSite) {
+          masterFilterSite.value = "";
+        }
+
+        renderMasterFiles();
+      },
+    );
+
+    masterSortNameButton?.addEventListener(
+      "click",
+      () => {
+        masterSortMode =
+          (masterSortMode + 1) % 3;
+        updateMasterSortIcon();
+        renderMasterFiles();
+      },
+    );
+
+    updateMasterSortIcon();
+
     masterFileInput.addEventListener(
       "change",
       handleFileSelection,

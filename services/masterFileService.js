@@ -29,6 +29,9 @@ const {
   canonicalizeMasterFile,
   canonicalizeMasterRecord,
 } = require("../utils/masterFileCanonical");
+const {
+  parseMasterEditorColumnIndexes,
+} = require("../utils/masterEditorSearch");
 
 const VALID_MASTER_SITES = VALID_SITES;
 const VALID_MASTER_TYPES = Object.values(MASTER_TYPES);
@@ -2798,6 +2801,8 @@ const getMasterFileEditorData = async ({
   user,
   page = 1,
   pageSize = 1000,
+  search = "",
+  columnIndexes = [],
 }) => {
   if (
     !masterFileId ||
@@ -2841,6 +2846,49 @@ const getMasterFileEditorData = async ({
     ? Math.min(parsedPageSize, 1000)
     : 1000;
 
+  const searchValue = String(
+    search ?? "",
+  )
+    .trim()
+    .slice(0, 150);
+  const allowedColumnIndexes = new Set(
+    (masterFile.headers || [])
+      .map((header) =>
+        Number(header.columnIndex),
+      )
+      .filter(
+        (columnIndex) =>
+          Number.isInteger(columnIndex) &&
+          columnIndex > 0,
+      ),
+  );
+  const requestedColumnIndexes =
+    parseMasterEditorColumnIndexes(
+      columnIndexes,
+    );
+  const selectedColumnIndexes =
+    requestedColumnIndexes.length > 0
+      ? requestedColumnIndexes.filter(
+          (columnIndex) =>
+            allowedColumnIndexes.has(
+              columnIndex,
+            ),
+        )
+      : Array.from(
+          allowedColumnIndexes,
+        );
+
+  if (
+    searchValue &&
+    selectedColumnIndexes.length === 0
+  ) {
+    throw createMasterServiceError(
+      "MASTER_EDITOR_FILTER_COLUMNS_INVALID",
+      "Selecciona al menos una columna valida para buscar.",
+      400,
+    );
+  }
+
   const pageResult =
     await masterFileRepository
       .findActiveMasterRecordsForEditor(
@@ -2848,6 +2896,9 @@ const getMasterFileEditorData = async ({
           masterFileId,
           page: safePage,
           pageSize: safePageSize,
+          search: searchValue,
+          columnIndexes:
+            selectedColumnIndexes,
         },
       );
 
@@ -2881,6 +2932,9 @@ const getMasterFileEditorData = async ({
       page: safePage,
       pageSize: safePageSize,
       totalRecords: pageResult.totalRecords,
+      isFiltered: Boolean(searchValue),
+      unfilteredTotalRecords:
+        Number(masterFile.recordCount) || 0,
       totalPages,
     },
   };

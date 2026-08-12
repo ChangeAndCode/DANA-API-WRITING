@@ -15,6 +15,7 @@ const {
 const {
   validateDataIntegrity,
   applyBusinessValidations,
+  classifyRowsByValidation,
 } = require(
   "../utils/validationUtils"
 );
@@ -179,14 +180,26 @@ const validateManualRowsForDocument = async (
   documentType,
   validationOptions = {}
 ) => {
+  const normalizedValidationOptions =
+    normalizeManualValidationOptions(documentType, validationOptions);
   const parsedData = {
     Sheet1: normalizeManualRowsForDocument(rows, documentType),
   };
-  return validateParsedDataForDocument(
+  const validationResult = await validateParsedDataForDocument(
     parsedData,
     documentType,
-    normalizeManualValidationOptions(documentType, validationOptions)
+    normalizedValidationOptions,
   );
+  const rowValidation = await classifyRowsByValidation(
+    validationResult.transformedData,
+    documentType,
+    normalizedValidationOptions,
+  );
+
+  return {
+    ...validationResult,
+    rowValidation,
+  };
 };
 
 const prepareManualImportFromFile = async (

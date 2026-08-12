@@ -1,3 +1,7 @@
+import { createTableFilter } from "./table-filter.js";
+import rowReadiness from "../../utils/rowReadiness.js";
+const { prioritizeRowsByValidation } = rowReadiness;
+
 const fileType = document.getElementById("fileType");
 const sections = document.querySelectorAll(".format-section");
 const createFileButton = document.getElementById("createFileButton");
@@ -26,11 +30,108 @@ const fileCreationPageState = {
   billOfMaterials: { rows: null, page: 1, renderedCount: 0 },
   splScrap: { rows: null, page: 1, renderedCount: 0 },
 };
+const CREATION_ROW_VALIDATION = Symbol("creationRowValidation");
+const CREATION_ROW_ID = Symbol("creationRowId");
+let nextCreationRowId = 0;
+
+function setCreationRowValidation(row, validation) {
+  if (!row || typeof row !== "object") return row;
+
+  Object.defineProperty(row, CREATION_ROW_VALIDATION, {
+    value: validation || null,
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+
+  return row;
+}
+
+function getCreationRowValidation(row) {
+  return row && typeof row === "object"
+    ? row[CREATION_ROW_VALIDATION] || null
+    : null;
+}
+
+function ensureCreationRowId(row, preferredId = "") {
+  if (!row || typeof row !== "object") return "";
+
+  const existingId = row[CREATION_ROW_ID];
+  if (existingId) return existingId;
+
+  const rowId =
+    preferredId ||
+    `creation-row-${nextCreationRowId += 1}`;
+
+  Object.defineProperty(row, CREATION_ROW_ID, {
+    value: rowId,
+    writable: false,
+    configurable: true,
+    enumerable: false,
+  });
+
+  return rowId;
+}
+
+function getCreationRowId(row) {
+  return row && typeof row === "object"
+    ? row[CREATION_ROW_ID] || ""
+    : "";
+}
+function copyCreationRowValidation(sourceRow, targetRow) {
+  const validation = getCreationRowValidation(sourceRow);
+  const rowId = getCreationRowId(sourceRow);
+
+  ensureCreationRowId(targetRow, rowId);
+  if (validation) {
+    setCreationRowValidation(targetRow, validation);
+  }
+  return targetRow;
+}
+
+function prepareCreationRowsByValidation(rows, rowValidation = []) {
+  const sourceRows =
+    Array.isArray(rows) && rows.length
+      ? rows.map((row) =>
+          row && typeof row === "object" && !Array.isArray(row)
+            ? { ...row }
+            : {},
+        )
+      : [{}];
+
+  return prioritizeRowsByValidation(
+    sourceRows,
+    rowValidation,
+  ).map(({ row, validation }) => {
+    ensureCreationRowId(row);
+    return setCreationRowValidation(
+      row,
+      validation,
+    );
+  });
+}
 let renderingCreationPage = false;
 let activeCreationDocumentType = "";
+const creationRowValidationTimers = new Map();
+const creationDocumentValidationTimers = new Map();
+const CREATION_ROW_VALIDATION_DELAY_MS = 220;
 
 function canAddCreationRow(documentType) {
   if (renderingCreationPage) return true;
+  if (
+    isCreationTableFilterActive(
+      documentType,
+    )
+  ) {
+    renderErrorList([
+      {
+        message:
+          "Limpia el filtro antes de agregar filas.",
+      },
+    ]);
+    return false;
+  }
+
   const state = fileCreationPageState[documentType];
   if (!state || !Array.isArray(state.rows)) return true;
   const totalPages = Math.max(
@@ -453,6 +554,24 @@ const splTable = document.getElementById("splTable");
 const splHead = splTable ? splTable.querySelector("thead") : null;
 const splBody = splTable ? splTable.querySelector("tbody") : null;
 const splAddRowBtn = document.getElementById("splAddRowBtn");
+const splTableFilterContainer =
+  document.getElementById(
+    "splTableFilter",
+  );
+const fpTableFilterContainer =
+  document.getElementById(
+    "fpTableFilter",
+  );
+const rmTableFilterContainer =
+  document.getElementById(
+    "rmTableFilter",
+  );
+const bmTableFilterContainer =
+  document.getElementById(
+    "bmTableFilter",
+  );
+const creationTableFilters = {};
+const creationTableFilterSignatures = {};
 const splMetaContainer = document.getElementById("splMetaFields");
 const splMetaInputs = {};
 let splInitialized = false;
@@ -2247,9 +2366,10 @@ function buildFinishedProductTable() {
   fpHead.appendChild(headerRow);
 
   fpBody.innerHTML = "";
-  for (let i = 0; i < 5; i++) {
-    addFinishedProductRow();
-  }
+  initializeCreationPagination(
+    "finishedProduct",
+    Array.from({ length: 5 }, () => ({})),
+  );
   updateTableScroll(fpBody);
 }
 
@@ -2275,9 +2395,10 @@ function buildRawMaterialTable() {
   rmHead.appendChild(headerRow);
 
   rmBody.innerHTML = "";
-  for (let i = 0; i < 5; i++) {
-    addRawMaterialRow();
-  }
+  initializeCreationPagination(
+    "rawMaterial",
+    Array.from({ length: 5 }, () => ({})),
+  );
   updateTableScroll(rmBody);
 }
 
@@ -2417,9 +2538,7 @@ function addFinishedProductRow(values = {}) {
   removeBtn.textContent = "Eliminar";
   removeBtn.addEventListener("click", () => {
     row.remove();
-    if (fpBody.children.length === 0) {
-      addFinishedProductRow();
-    }
+    handleCreationRowRemoval("finishedProduct");
   });
   actionsTd.appendChild(removeBtn);
   row.appendChild(actionsTd);
@@ -2460,18 +2579,263 @@ function readVisibleCreationRows(documentType) {
     config.columns.forEach((column, index) => {
       row[column.label] = editors[index]?.value || "";
     });
-    return row;
+    const sourceIndex = Number(
+      tr.dataset.creationSourceIndex,
+    );
+    const sourceRow =
+      Number.isInteger(sourceIndex)
+        ? fileCreationPageState[documentType]?.rows?.[sourceIndex]
+        : null;
+    copyCreationRowValidation(sourceRow, row);
+
+    return {
+      element: tr,
+      row,
+      sourceIndex:
+        tr.dataset.creationSourceIndex !==
+          undefined &&
+        Number.isInteger(sourceIndex)
+          ? sourceIndex
+          : null,
+    };
   });
+}
+
+function isCreationTableFilterActive(
+  documentType,
+) {
+  const filter =
+    creationTableFilters[documentType];
+  const state = filter?.getState();
+
+  return Boolean(
+    String(state?.query || "").trim(),
+  );
+}
+
+function getFilteredCreationEntries(
+  documentType,
+) {
+  const state =
+    fileCreationPageState[documentType];
+
+  if (
+    !state ||
+    !Array.isArray(state.rows)
+  ) {
+    return [];
+  }
+
+  const filter =
+    creationTableFilters[documentType];
+  const filteredRows = filter
+    ? filter.filterItems(state.rows)
+    : state.rows;
+  const sourceIndexByRow = new Map();
+
+  state.rows.forEach((row, index) => {
+    sourceIndexByRow.set(row, index);
+  });
+
+  return filteredRows.map((row) => ({
+    row,
+    sourceIndex:
+      sourceIndexByRow.get(row),
+  }));
+}
+
+function getCreationFilterSignature(
+  detail,
+) {
+  return JSON.stringify({
+    query: String(detail?.query || ""),
+    selectedColumnKeys: Array.from(
+      detail?.selectedColumnKeys || [],
+    ).sort(),
+  });
+}
+
+function getCreationFilterColumns(
+  documentType,
+) {
+  const config =
+    getCreationPaginationConfig(
+      documentType,
+    );
+
+  return (config?.columns || []).map(
+    (column) => ({
+      key: column.key,
+      label: column.label,
+      getValue: (row) =>
+        row?.[column.label],
+    }),
+  );
+}
+
+function initializeCreationTableFilters() {
+  const configurations = [
+    {
+      documentType: "finishedProduct",
+      container: fpTableFilterContainer,
+    },
+    {
+      documentType: "rawMaterial",
+      container: rmTableFilterContainer,
+    },
+    {
+      documentType: "billOfMaterials",
+      container: bmTableFilterContainer,
+    },
+    {
+      documentType: "splScrap",
+      container: splTableFilterContainer,
+    },
+  ];
+
+  configurations.forEach(
+    ({ documentType, container }) => {
+      if (!container) {
+        return;
+      }
+
+      creationTableFilters[documentType] =
+        createTableFilter({
+          container,
+          columns:
+            getCreationFilterColumns(
+              documentType,
+            ),
+          beforeApply: () => {
+            persistVisibleCreationPage(
+              documentType,
+            );
+          },
+          getItems: () => {
+            const state =
+              fileCreationPageState[
+                documentType
+              ];
+
+            return Array.isArray(
+              state?.rows,
+            )
+              ? state.rows
+              : [];
+          },
+          onChange: (detail) => {
+            const signature =
+              getCreationFilterSignature(
+                detail,
+              );
+            const filterChanged =
+              creationTableFilterSignatures[
+                documentType
+              ] !== signature;
+
+            creationTableFilterSignatures[
+              documentType
+            ] = signature;
+
+            const state =
+              fileCreationPageState[
+                documentType
+              ];
+
+            if (
+              !state ||
+              !Array.isArray(state.rows)
+            ) {
+              return;
+            }
+
+            if (filterChanged) {
+              state.page = 1;
+            }
+
+            renderCreationPage(
+              documentType,
+            );
+          },
+        });
+    },
+  );
 }
 
 function persistVisibleCreationPage(documentType) {
   if (renderingCreationPage) return;
   const state = fileCreationPageState[documentType];
   if (!state || !Array.isArray(state.rows)) return;
-  const startIndex = (state.page - 1) * FILE_CREATION_PAGE_SIZE;
-  const visibleRows = readVisibleCreationRows(documentType);
-  state.rows.splice(startIndex, state.renderedCount, ...visibleRows);
-  state.renderedCount = visibleRows.length;
+
+  const visibleEntries =
+    readVisibleCreationRows(documentType);
+  const renderedSourceIndexes = new Set(
+    state.renderedSourceIndexes || [],
+  );
+  const retainedSourceIndexes = new Set();
+  const newRows = [];
+
+  visibleEntries.forEach(
+    ({ row, sourceIndex }) => {
+      if (
+        Number.isInteger(sourceIndex) &&
+        renderedSourceIndexes.has(
+          sourceIndex,
+        ) &&
+        sourceIndex >= 0 &&
+        sourceIndex < state.rows.length
+      ) {
+        state.rows[sourceIndex] = row;
+        retainedSourceIndexes.add(
+          sourceIndex,
+        );
+        return;
+      }
+
+      if (sourceIndex === null) {
+        newRows.push(row);
+      }
+    },
+  );
+
+  Array.from(renderedSourceIndexes)
+    .filter(
+      (sourceIndex) =>
+        !retainedSourceIndexes.has(
+          sourceIndex,
+        ),
+    )
+    .sort((first, second) => second - first)
+    .forEach((sourceIndex) => {
+      state.rows.splice(sourceIndex, 1);
+    });
+
+  state.rows.push(...newRows);
+
+  const currentSourceIndexes = [];
+  visibleEntries.forEach(
+    ({ element, row }) => {
+      const sourceIndex =
+        state.rows.indexOf(row);
+
+      if (sourceIndex < 0) {
+        delete element.dataset
+          .creationSourceIndex;
+        return;
+      }
+
+      element.dataset.creationSourceIndex =
+        String(sourceIndex);
+      currentSourceIndexes.push(
+        sourceIndex,
+      );
+    },
+  );
+
+  state.renderedSourceIndexes =
+    currentSourceIndexes;
+  state.renderedCount =
+    visibleEntries.length;
 }
 
 function renderCreationPagination(documentType) {
@@ -2481,7 +2845,10 @@ function renderCreationPagination(documentType) {
     return;
   }
 
-  const totalRecords = state.rows.length;
+  const totalRecords =
+    getFilteredCreationEntries(
+      documentType,
+    ).length;
   const totalPages = Math.max(1, Math.ceil(totalRecords / FILE_CREATION_PAGE_SIZE));
   state.page = Math.min(Math.max(state.page, 1), totalPages);
   const firstRecord = totalRecords ? ((state.page - 1) * FILE_CREATION_PAGE_SIZE) + 1 : 0;
@@ -2501,28 +2868,104 @@ function renderCreationPage(documentType) {
   const config = getCreationPaginationConfig(documentType);
   if (!state || !Array.isArray(state.rows) || !config?.tbody) return;
 
-  const totalPages = Math.max(1, Math.ceil(state.rows.length / FILE_CREATION_PAGE_SIZE));
-  state.page = Math.min(Math.max(state.page, 1), totalPages);
-  const startIndex = (state.page - 1) * FILE_CREATION_PAGE_SIZE;
-  const pageRows = state.rows.slice(startIndex, startIndex + FILE_CREATION_PAGE_SIZE);
+  const filteredEntries =
+    getFilteredCreationEntries(
+      documentType,
+    );
+  const totalPages = Math.max(
+    1,
+    Math.ceil(
+      filteredEntries.length /
+        FILE_CREATION_PAGE_SIZE,
+    ),
+  );
+  state.page = Math.min(
+    Math.max(state.page, 1),
+    totalPages,
+  );
+  const startIndex =
+    (state.page - 1) *
+    FILE_CREATION_PAGE_SIZE;
+  const pageEntries =
+    filteredEntries.slice(
+      startIndex,
+      startIndex +
+        FILE_CREATION_PAGE_SIZE,
+    );
+  const renderEntries =
+    pageEntries.length > 0
+      ? pageEntries
+      : isCreationTableFilterActive(
+            documentType,
+          )
+        ? []
+        : [
+            {
+              row: {},
+              sourceIndex: null,
+            },
+          ];
 
   renderingCreationPage = true;
   config.tbody.innerHTML = "";
-  (pageRows.length ? pageRows : [{}]).forEach((row) => config.addRow(row));
-  renderingCreationPage = false;
-  state.renderedCount = pageRows.length ? pageRows.length : 1;
+
+  try {
+    renderEntries.forEach(
+      ({ row, sourceIndex }) => {
+        config.addRow(row);
+
+        const rowElement =
+          config.tbody.lastElementChild;
+
+        if (!rowElement) {
+          return;
+        }
+
+        if (
+          Number.isInteger(
+            sourceIndex,
+          )
+        ) {
+          rowElement.dataset
+            .creationSourceIndex =
+            String(sourceIndex);
+        } else {
+          delete rowElement.dataset
+            .creationSourceIndex;
+        }
+      },
+    );
+  } finally {
+    renderingCreationPage = false;
+  }
+
+  state.renderedSourceIndexes =
+    pageEntries.map(
+      ({ sourceIndex }) =>
+        sourceIndex,
+    );
+  state.renderedCount =
+    renderEntries.length;
 
   if (documentType === "splScrap") applySplScrapShipmentMode();
   updateTableScroll(config.tbody);
   renderCreationPagination(documentType);
 }
 
-function initializeCreationPagination(documentType, rows) {
-  const list = Array.isArray(rows) && rows.length ? [...rows] : [{}];
+function initializeCreationPagination(
+  documentType,
+  rows,
+  rowValidation = [],
+) {
+  const list = prepareCreationRowsByValidation(
+    rows,
+    rowValidation,
+  );
   fileCreationPageState[documentType] = {
     rows: list,
     page: 1,
     renderedCount: 0,
+    renderedSourceIndexes: [],
   };
   renderCreationPage(documentType);
 }
@@ -2532,39 +2975,113 @@ function changeCreationPage(targetPage) {
   const state = fileCreationPageState[documentType];
   if (!state || !Array.isArray(state.rows)) return;
   persistVisibleCreationPage(documentType);
-  const totalPages = Math.max(1, Math.ceil(state.rows.length / FILE_CREATION_PAGE_SIZE));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(getFilteredCreationEntries(documentType).length / FILE_CREATION_PAGE_SIZE),
+  );
   state.page = Math.min(Math.max(targetPage, 1), totalPages);
   renderCreationPage(documentType);
 }
 
-function setFinishedProductRows(rows = []) {
+function addCreationRowFromToolbar(
+  documentType,
+) {
+  const filter =
+    creationTableFilters[documentType];
+
+  if (
+    isCreationTableFilterActive(
+      documentType,
+    )
+  ) {
+    filter?.clear();
+  }
+
+  const state =
+    fileCreationPageState[documentType];
+
+  if (
+    state &&
+    Array.isArray(state.rows)
+  ) {
+    persistVisibleCreationPage(
+      documentType,
+    );
+
+    const lastPage = Math.max(
+      1,
+      Math.ceil(
+        state.rows.length /
+          FILE_CREATION_PAGE_SIZE,
+      ),
+    );
+
+    if (state.page !== lastPage) {
+      state.page = lastPage;
+      renderCreationPage(documentType);
+    }
+  }
+
+  addRowForDocumentType(documentType);
+}
+
+function handleCreationRowRemoval(
+  documentType,
+) {
+  const filter =
+    creationTableFilters[documentType];
+
+  if (filter) {
+    filter.apply();
+    return;
+  }
+
+  persistVisibleCreationPage(
+    documentType,
+  );
+  renderCreationPage(documentType);
+}
+
+function setFinishedProductRows(rows = [], rowValidation = []) {
   if (!fpBody) return;
   if (!fpInitialized) {
     buildFinishedProductTable();
     fpInitialized = true;
   }
-  initializeCreationPagination("finishedProduct", rows);
+  initializeCreationPagination(
+    "finishedProduct",
+    rows,
+    rowValidation,
+  );
 }
 
-function setRawMaterialRows(rows = []) {
+function setRawMaterialRows(rows = [], rowValidation = []) {
   if (!rmBody) return;
   if (!rmInitialized) {
     buildRawMaterialTable();
     rmInitialized = true;
   }
-  initializeCreationPagination("rawMaterial", rows);
+  initializeCreationPagination(
+    "rawMaterial",
+    rows,
+    rowValidation,
+  );
 }
 
-function setBillOfMaterialsRows(rows = []) {
+function setBillOfMaterialsRows(rows = [], rowValidation = []) {
   if (!bmBody) return;
   if (!bmInitialized) {
     buildBillOfMaterialsTable();
     bmInitialized = true;
   }
-  initializeCreationPagination("billOfMaterials", rows);
+  initializeCreationPagination(
+    "billOfMaterials",
+    rows,
+    rowValidation,
+  );
 }
 
-function setSplScrapRows(rows = []) {
+function setSplScrapRows(rows = [], rowValidation = []) {
   if (!splBody || !splMetaContainer) return;
   if (!splInitialized) {
     buildSplScrapMetaFields();
@@ -2586,7 +3103,11 @@ function setSplScrapRows(rows = []) {
     input.value = value !== undefined && value !== null ? String(value) : "";
   });
 
-  initializeCreationPagination("splScrap", list);
+  initializeCreationPagination(
+    "splScrap",
+    list,
+    rowValidation,
+  );
 }
 // Utilidad para scroll interno en tablas si hay más de 6 filas
 function updateTableScroll(tbody) {
@@ -2730,9 +3251,7 @@ function addRawMaterialRow(values = {}) {
   removeBtn.textContent = "Eliminar";
   removeBtn.addEventListener("click", () => {
     row.remove();
-    if (rmBody.children.length === 0) {
-      addRawMaterialRow();
-    }
+    handleCreationRowRemoval("rawMaterial");
   });
   actionsTd.appendChild(removeBtn);
   row.appendChild(actionsTd);
@@ -2765,9 +3284,10 @@ function buildBillOfMaterialsTable() {
   bmHead.appendChild(headerRow);
 
   bmBody.innerHTML = "";
-  for (let i = 0; i < 5; i++) {
-    addBillOfMaterialsRow();
-  }
+  initializeCreationPagination(
+    "billOfMaterials",
+    Array.from({ length: 5 }, () => ({})),
+  );
   updateTableScroll(bmBody);
 }
 
@@ -2869,9 +3389,7 @@ function addBillOfMaterialsRow(values = {}) {
   removeBtn.textContent = "Eliminar";
   removeBtn.addEventListener("click", () => {
     row.remove();
-    if (bmBody.children.length === 0) {
-      addBillOfMaterialsRow();
-    }
+    handleCreationRowRemoval("billOfMaterials");
   });
   actionsTd.appendChild(removeBtn);
   row.appendChild(actionsTd);
@@ -3255,9 +3773,10 @@ function buildSplScrapTable() {
   splHead.appendChild(headerRow);
 
   splBody.innerHTML = "";
-  for (let i = 0; i < 5; i++) {
-    addSplScrapRow();
-  }
+  initializeCreationPagination(
+    "splScrap",
+    Array.from({ length: 5 }, () => ({})),
+  );
   updateTableScroll(splBody);
 }
 
@@ -3429,9 +3948,7 @@ function addSplScrapRow(values = {}) {
   removeBtn.textContent = "Eliminar";
   removeBtn.addEventListener("click", () => {
     row.remove();
-    if (splBody.children.length === 0) {
-      addSplScrapRow();
-    }
+    handleCreationRowRemoval("splScrap");
   });
   actionsTd.appendChild(removeBtn);
   row.appendChild(actionsTd);
@@ -3489,19 +4006,27 @@ function showFormat(type) {
 }
 
 if (fpAddRowBtn) {
-  fpAddRowBtn.addEventListener("click", addFinishedProductRow);
+  fpAddRowBtn.addEventListener("click", () => {
+    addCreationRowFromToolbar("finishedProduct");
+  });
 }
 
 if (rmAddRowBtn) {
-  rmAddRowBtn.addEventListener("click", addRawMaterialRow);
+  rmAddRowBtn.addEventListener("click", () => {
+    addCreationRowFromToolbar("rawMaterial");
+  });
 }
 
 if (bmAddRowBtn) {
-  bmAddRowBtn.addEventListener("click", addBillOfMaterialsRow);
+  bmAddRowBtn.addEventListener("click", () => {
+    addCreationRowFromToolbar("billOfMaterials");
+  });
 }
 
 if (splAddRowBtn) {
-  splAddRowBtn.addEventListener("click", addSplScrapRow);
+  splAddRowBtn.addEventListener("click", () => {
+    addCreationRowFromToolbar("splScrap");
+  });
 }
 
 if (fileCreationFirstPage) {
@@ -3515,10 +4040,18 @@ if (fileCreationFirstPage) {
     changeCreationPage((state?.page || 1) + 1);
   });
   fileCreationLastPage.addEventListener("click", () => {
-    const state = fileCreationPageState[fileType?.value];
+    const documentType =
+      fileType?.value;
+    const totalRecords =
+      getFilteredCreationEntries(
+        documentType,
+      ).length;
     const totalPages = Math.max(
       1,
-      Math.ceil((state?.rows?.length || 0) / FILE_CREATION_PAGE_SIZE),
+      Math.ceil(
+        totalRecords /
+          FILE_CREATION_PAGE_SIZE,
+      ),
     );
     changeCreationPage(totalPages);
   });
@@ -3600,29 +4133,45 @@ function renderImportSelectionNotice(fileName, documentType) {
   validationResult.append(h4, p1, p2);
 }
 
-function applyImportedRowsToEditor(documentType, rows = []) {
+function applyImportedRowsToEditor(
+  documentType,
+  rows = [],
+  rowValidation = [],
+) {
   if (!fileType) return;
 
   fileType.value = documentType;
   showFormat(documentType);
 
   if (documentType === "finishedProduct") {
-    setFinishedProductRows(rows);
+    setFinishedProductRows(
+      rows,
+      rowValidation,
+    );
     return;
   }
 
   if (documentType === "rawMaterial") {
-    setRawMaterialRows(rows);
+    setRawMaterialRows(
+      rows,
+      rowValidation,
+    );
     return;
   }
 
   if (documentType === "billOfMaterials") {
-    setBillOfMaterialsRows(rows);
+    setBillOfMaterialsRows(
+      rows,
+      rowValidation,
+    );
     return;
   }
 
   if (documentType === "splScrap") {
-    setSplScrapRows(rows);
+    setSplScrapRows(
+      rows,
+      rowValidation,
+    );
   }
 }
 
@@ -3733,7 +4282,11 @@ async function startManualImport() {
       );
     }
 
-    applyImportedRowsToEditor(data.documentType || fileType.value, importedRows);
+    applyImportedRowsToEditor(
+      data.documentType || fileType.value,
+      importedRows,
+      data.rowValidation || [],
+    );
 
     editingFileId = "";
     if (createFileButton) createFileButton.classList.remove("hidden");
@@ -3867,7 +4420,7 @@ function renderWarning(errors, jobId) {
   validationResult.innerHTML = "";
 
   const h4 = document.createElement("h4");
-  h4.textContent = "Creado con errores";
+  h4.textContent = "Reporte de Errores";
   const p = document.createElement("p");
   p.textContent = "El archivo se proces\u00f3, pero se encontraron problemas.";
 
@@ -4059,6 +4612,341 @@ async function createManualFile(documentType, rows, displayName) {
     if (spinner) spinner.classList.add("hidden");
   }
 }
+async function requestCreationRowValidation(
+  documentType,
+  rows,
+) {
+  if (!Array.isArray(rows) || !rows.length) {
+    return [];
+  }
+
+  const response = await fetch("/api/files/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      documentType,
+      rows,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data.message ||
+        "No fue posible clasificar las filas del archivo.",
+    );
+  }
+
+  return Array.isArray(data.rowValidation)
+    ? data.rowValidation
+    : [];
+}
+function getCreationRowsForValidation(documentType, rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const meta =
+    documentType === "splScrap"
+      ? collectSplScrapMeta()
+      : null;
+
+  return safeRows.map((row) =>
+    meta
+      ? { ...(row || {}), ...meta }
+      : { ...(row || {}) },
+  );
+}
+
+function applyCreationRowValidationResults(
+  documentType,
+  rowValidation,
+) {
+  const state = fileCreationPageState[documentType];
+  if (!state || !Array.isArray(state.rows)) return;
+
+  state.rows = prioritizeRowsByValidation(
+    state.rows,
+    rowValidation,
+  ).map(({ row, validation }) => {
+    ensureCreationRowId(row);
+    return setCreationRowValidation(
+      row,
+      validation,
+    );
+  });
+  state.page = 1;
+  renderCreationPage(documentType);
+}
+
+function reorderCreationRowsFromStoredValidation(
+  documentType,
+  trackedRowId = "",
+) {
+  const state = fileCreationPageState[documentType];
+  if (!state || !Array.isArray(state.rows)) return;
+
+  const rowValidation = state.rows.map((row, index) => ({
+    ...(getCreationRowValidation(row) || {}),
+    index,
+    isValid:
+      getCreationRowValidation(row)?.isValid === true,
+  }));
+
+  state.rows = prioritizeRowsByValidation(
+    state.rows,
+    rowValidation,
+  ).map(({ row, validation }) =>
+    setCreationRowValidation(row, validation),
+  );
+
+  const trackedIndex = trackedRowId
+    ? state.rows.findIndex(
+        (row) =>
+          getCreationRowId(row) === trackedRowId,
+      )
+    : -1;
+
+  state.page =
+    trackedIndex >= 0
+      ? Math.floor(
+          trackedIndex / FILE_CREATION_PAGE_SIZE,
+        ) + 1
+      : 1;
+  renderCreationPage(documentType);
+}
+
+async function validateAndPrioritizeCreationRows(
+  documentType,
+) {
+  persistVisibleCreationPage(documentType);
+  const state = fileCreationPageState[documentType];
+
+  if (!state || !Array.isArray(state.rows)) {
+    return [];
+  }
+
+  const validationRows =
+    getCreationRowsForValidation(
+      documentType,
+      state.rows,
+    );
+  const rowValidation =
+    await requestCreationRowValidation(
+      documentType,
+      validationRows,
+    );
+
+  applyCreationRowValidationResults(
+    documentType,
+    rowValidation,
+  );
+
+  return rowValidation;
+}
+
+async function revalidateSingleCreationRow(
+  documentType,
+  rowId,
+  expectedSignature,
+) {
+  const state = fileCreationPageState[documentType];
+  if (!state || !Array.isArray(state.rows)) return;
+
+  let rowIndex = state.rows.findIndex(
+    (row) => getCreationRowId(row) === rowId,
+  );
+  if (rowIndex < 0) return;
+
+  let validationRow =
+    getCreationRowsForValidation(
+      documentType,
+      [state.rows[rowIndex]],
+    )[0] || {};
+
+  if (
+    JSON.stringify(validationRow) !==
+    expectedSignature
+  ) {
+    return;
+  }
+
+  const rowValidation =
+    await requestCreationRowValidation(
+      documentType,
+      [validationRow],
+    );
+
+  rowIndex = state.rows.findIndex(
+    (row) => getCreationRowId(row) === rowId,
+  );
+  if (rowIndex < 0) return;
+
+  validationRow =
+    getCreationRowsForValidation(
+      documentType,
+      [state.rows[rowIndex]],
+    )[0] || {};
+
+  if (
+    JSON.stringify(validationRow) !==
+    expectedSignature
+  ) {
+    return;
+  }
+
+  const validation = rowValidation[0] || {
+    index: 0,
+    row: 2,
+    isValid: false,
+    errors: [],
+  };
+  setCreationRowValidation(
+    state.rows[rowIndex],
+    validation,
+  );
+  reorderCreationRowsFromStoredValidation(
+    documentType,
+    rowId,
+  );
+}
+
+function scheduleCreationRowRevalidation(
+  documentType,
+  rowElement,
+) {
+  if (renderingCreationPage || !rowElement) return;
+
+  persistVisibleCreationPage(documentType);
+  const state = fileCreationPageState[documentType];
+  const sourceIndex = Number(
+    rowElement.dataset.creationSourceIndex,
+  );
+
+  if (
+    !state ||
+    !Array.isArray(state.rows) ||
+    !Number.isInteger(sourceIndex) ||
+    !state.rows[sourceIndex]
+  ) {
+    return;
+  }
+
+  const row = state.rows[sourceIndex];
+  const rowId = ensureCreationRowId(row);
+  const validationRow =
+    getCreationRowsForValidation(
+      documentType,
+      [row],
+    )[0] || {};
+  const signature = JSON.stringify(validationRow);
+  const existingTimer =
+    creationRowValidationTimers.get(rowId);
+
+  if (existingTimer) {
+    window.clearTimeout(existingTimer);
+  }
+
+  const timer = window.setTimeout(() => {
+    creationRowValidationTimers.delete(rowId);
+    revalidateSingleCreationRow(
+      documentType,
+      rowId,
+      signature,
+    ).catch((error) => {
+      console.error(
+        "No fue posible revalidar la fila:",
+        error,
+      );
+    });
+  }, CREATION_ROW_VALIDATION_DELAY_MS);
+
+  creationRowValidationTimers.set(rowId, timer);
+}
+
+function scheduleCreationDocumentRevalidation(
+  documentType,
+) {
+  const existingTimer =
+    creationDocumentValidationTimers.get(
+      documentType,
+    );
+
+  if (existingTimer) {
+    window.clearTimeout(existingTimer);
+  }
+
+  const timer = window.setTimeout(() => {
+    creationDocumentValidationTimers.delete(
+      documentType,
+    );
+    validateAndPrioritizeCreationRows(
+      documentType,
+    ).catch((error) => {
+      console.error(
+        "No fue posible revalidar las filas:",
+        error,
+      );
+    });
+  }, CREATION_ROW_VALIDATION_DELAY_MS);
+
+  creationDocumentValidationTimers.set(
+    documentType,
+    timer,
+  );
+}
+
+function initializeCreationRowRevalidation() {
+  [
+    ["finishedProduct", fpBody],
+    ["rawMaterial", rmBody],
+    ["billOfMaterials", bmBody],
+    ["splScrap", splBody],
+  ].forEach(([documentType, tbody]) => {
+    if (!tbody) return;
+
+    const handleEditorFinished = (event) => {
+      const editor = event.target;
+      if (
+        !(editor instanceof HTMLInputElement) &&
+        !(editor instanceof HTMLSelectElement)
+      ) {
+        return;
+      }
+
+      const rowElement = editor.closest("tr");
+      if (rowElement) {
+        scheduleCreationRowRevalidation(
+          documentType,
+          rowElement,
+        );
+      }
+    };
+
+    tbody.addEventListener(
+      "change",
+      handleEditorFinished,
+    );
+    tbody.addEventListener(
+      "focusout",
+      handleEditorFinished,
+    );
+  });
+
+  if (splMetaContainer) {
+    const handleMetaFinished = () => {
+      scheduleCreationDocumentRevalidation(
+        "splScrap",
+      );
+    };
+
+    splMetaContainer.addEventListener(
+      "change",
+      handleMetaFinished,
+    );
+    splMetaContainer.addEventListener(
+      "focusout",
+      handleMetaFinished,
+    );
+  }
+}
 
 async function loadFileForEdit(docId, docType) {
   if (!docId) return;
@@ -4087,6 +4975,20 @@ async function loadFileForEdit(docId, docType) {
     const doc = data && data.document ? data.document : null;
     if (!doc) {
       throw new Error("Archivo no encontrado.");
+    }
+
+    let rowValidation = [];
+    try {
+      rowValidation =
+        await requestCreationRowValidation(
+          targetType,
+          doc.rows || [],
+        );
+    } catch (validationError) {
+      console.error(
+        "No fue posible clasificar las filas cargadas:",
+        validationError,
+      );
     }
 
     editingFileId = doc._id;
@@ -4125,13 +5027,25 @@ async function loadFileForEdit(docId, docType) {
     }
 
       if (targetType === "finishedProduct") {
-        setFinishedProductRows(doc.rows || []);
+        setFinishedProductRows(
+          doc.rows || [],
+          rowValidation,
+        );
       } else if (targetType === "rawMaterial") {
-        setRawMaterialRows(doc.rows || []);
+        setRawMaterialRows(
+          doc.rows || [],
+          rowValidation,
+        );
       } else if (targetType === "billOfMaterials") {
-        setBillOfMaterialsRows(doc.rows || []);
+        setBillOfMaterialsRows(
+          doc.rows || [],
+          rowValidation,
+        );
       } else if (targetType === "splScrap") {
-        setSplScrapRows(doc.rows || []);
+        setSplScrapRows(
+          doc.rows || [],
+          rowValidation,
+        );
       }
 
     if (createFileButton) createFileButton.classList.add("hidden");
@@ -4140,6 +5054,9 @@ async function loadFileForEdit(docId, docType) {
     renderErrorList([{ message: err.message || "Error al cargar archivo." }]);
   }
 }
+
+initializeCreationTableFilters();
+initializeCreationRowRevalidation();
 
 if (fileType) {
   fileType.addEventListener("change", async (e) => {
@@ -4184,6 +5101,20 @@ if (createFileButton) {
       return;
     }
     await loadManualCatalogOptions(true);
+    try {
+      await validateAndPrioritizeCreationRows(
+        fileType.value,
+      );
+    } catch (validationError) {
+      renderErrorList([
+        {
+          message:
+            validationError.message ||
+            "No fue posible ordenar las filas antes de crear.",
+        },
+      ]);
+      return;
+    }
     if (
       !validateDateInputsForDocumentType(
         fileType.value,
@@ -4273,6 +5204,20 @@ if (updateFileButton) {
     }
     const targetType = fileType.value;
     await loadManualCatalogOptions(true);
+    try {
+      await validateAndPrioritizeCreationRows(
+        targetType,
+      );
+    } catch (validationError) {
+      renderErrorList([
+        {
+          message:
+            validationError.message ||
+            "No fue posible ordenar las filas antes de actualizar.",
+        },
+      ]);
+      return;
+    }
       if (
         targetType !== "finishedProduct" &&
         targetType !== "rawMaterial" &&

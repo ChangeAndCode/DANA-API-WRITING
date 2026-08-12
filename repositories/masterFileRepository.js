@@ -3,6 +3,9 @@
 const MasterFile = require("../models/MasterFile");
 const MasterRecord = require("../models/MasterRecord");
 const mongoose = require("mongoose");
+const {
+  buildMasterEditorSearchExpression,
+} = require("../utils/masterEditorSearch");
 
 /**
  * Agrega la sesión de MongoDB solamente cuando existe.
@@ -285,11 +288,26 @@ const findActiveMasterRecordsForEditor = async ({
   masterFileId,
   page,
   pageSize,
+  search = "",
+  columnIndexes = [],
 }) => {
   const filter = {
     masterFileId,
     isDeleted: false,
   };
+  const searchExpression =
+    buildMasterEditorSearchExpression({
+      search,
+      columnIndexes,
+    });
+
+  if (searchExpression) {
+    Object.assign(
+      filter,
+      searchExpression,
+    );
+  }
+
 
   const [records, totalRecords] = await Promise.all([
     MasterRecord.find(filter)

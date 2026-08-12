@@ -393,7 +393,7 @@
   }
 
   function applyColumnFilters() {
-    let filtered = allFilesList;
+    let filtered = allFilesList.slice();
     if (filterNombre && filterNombre.value.trim() !== "") {
       const val = filterNombre.value.trim().toLowerCase();
       filtered = filtered.filter((file) => {
@@ -418,23 +418,64 @@
     if (filterFecha && filterFecha.value.trim() !== "") {
       const val = filterFecha.value.trim().toLowerCase();
       filtered = filtered.filter((file) => {
-        const created = file.createdAt
-          ? formatDate(file.createdAt).toLowerCase()
-          : "";
-        const updated = file.updatedAt
-          ? formatDate(file.updatedAt).toLowerCase()
-          : "";
-        return created.includes(val) || updated.includes(val);
+        const dateValue = file.updatedAt || file.createdAt;
+        if (!dateValue) return false;
+        const date = new Date(dateValue);
+        if (Number.isNaN(date.getTime())) return false;
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const year = String(date.getFullYear());
+        const searchableDates = [
+          formatDate(dateValue),
+          `${day}/${month}/${year}`,
+          `${date.getDate()}/${date.getMonth() + 1}/${year}`,
+          `${year}-${month}-${day}`,
+        ];
+        return searchableDates.some((candidate) =>
+          candidate.toLowerCase().includes(val),
+        );
       });
     }
     if (filterUsuario && filterUsuario.value.trim() !== "") {
       const val = filterUsuario.value.trim().toLowerCase();
       filtered = filtered.filter((file) => {
-        const user = file.createdBy || file.userId || "";
-        const userLabel = userCache.get(user) || user;
-        return String(userLabel).toLowerCase().includes(val);
+        const user = file.updatedBy || file.createdBy || file.userId || "";
+        const userValues = typeof user === "object"
+          ? [
+              user.displayName,
+              user.email,
+              user._id,
+              user.id,
+            ]
+          : [
+              userCache.get(String(user)),
+              user,
+            ];
+        return userValues.filter(Boolean).some((candidate) =>
+          String(candidate).toLowerCase().includes(val),
+        );
       });
     }
+    if (sortMode === 0) {
+      filtered.sort((a, b) => {
+        const aDate = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        const bDate = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        return bDate - aDate;
+      });
+    } else if (sortMode === 1) {
+      filtered.sort((a, b) => {
+        const aName = (a.adminFileName || a.fileName || "").toLowerCase();
+        const bName = (b.adminFileName || b.fileName || "").toLowerCase();
+        return aName.localeCompare(bName);
+      });
+    } else {
+      filtered.sort((a, b) => {
+        const aName = (a.adminFileName || a.fileName || "").toLowerCase();
+        const bName = (b.adminFileName || b.fileName || "").toLowerCase();
+        return bName.localeCompare(aName);
+      });
+    }
+
     renderFilteredDocuments(filtered);
   }
 
@@ -468,6 +509,17 @@
 
   function renderSortedDocuments() {
     let docs = allFilesList.slice();
+    const hasActiveFilters = [
+      filterNombre,
+      filterNomenclatura,
+      filterFecha,
+      filterUsuario,
+    ].some((input) => input && input.value.trim() !== "");
+    if (hasActiveFilters) {
+      applyColumnFilters();
+      return;
+    }
+
     if (sortMode === 0) {
       // Por fecha descendente (más reciente arriba)
       docs.sort((a, b) => {

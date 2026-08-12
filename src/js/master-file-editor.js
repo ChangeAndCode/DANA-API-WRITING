@@ -1,3 +1,5 @@
+import { createTableFilter } from "./table-filter.js";
+
 const masterEditorMessage = document.getElementById("masterEditorMessage");
 
 const masterEditorPanel = document.getElementById("masterEditorPanel");
@@ -17,6 +19,10 @@ const masterEditorTableWrapper = document.getElementById("masterEditorTableWrapp
 const masterEditorTableHead = document.getElementById("masterEditorTableHead");
 
 const masterEditorTableBody = document.getElementById("masterEditorTableBody");
+const masterEditorTableFilterContainer =
+  document.getElementById(
+    "masterEditorTableFilter",
+  );
 
 const masterEditorPlaceholder = document.getElementById("masterEditorPlaceholder");
 
@@ -51,6 +57,15 @@ const MASTER_EDITOR_PAGE_SIZE = 1000;
 let currentEditorPage = 1;
 let currentEditorTotalPages = 1;
 let currentEditorTotalRecords = 0;
+let currentEditorUnfilteredTotalRecords = 0;
+let masterEditorTableFilter = null;
+let masterEditorFilterTimer = null;
+let masterEditorFilterRequestId = 0;
+let masterEditorFilterLoading = false;
+let suppressMasterEditorFilterChange =
+  false;
+const MASTER_EDITOR_FILTER_DELAY_MS =
+  300;
 const masterCatalogState = {
   unitOfMeasure: {
     options: [],
@@ -349,6 +364,10 @@ const canEditMasterContent = () => {
 const setEditorDirty = (hasChanges) => {
   editorHasChanges = hasChanges;
 
+  masterEditorTableFilter?.setDisabled(
+    editorIsSaving || editorHasChanges,
+  );
+
   masterEditorSaveButton.disabled =
     editorIsSaving ||
     !canEditMasterContent() ||
@@ -417,17 +436,20 @@ const configureEditorPermissions = () => {
 
   const contentDisabled =
     editorIsSaving ||
+    masterEditorFilterLoading ||
     !canEditMasterContent();
 
   masterEditorType.disabled = true;
 
   masterEditorName.disabled =
-    editorIsSaving || !isAdmin;
+    editorIsSaving ||
+    masterEditorFilterLoading || !isAdmin;
 
   masterEditorSiteCheckboxes.forEach(
     (checkbox) => {
       checkbox.disabled =
-        editorIsSaving || !isAdmin;
+        editorIsSaving ||
+        masterEditorFilterLoading || !isAdmin;
     },
   );
 
@@ -451,16 +473,25 @@ const configureEditorPermissions = () => {
 
   masterEditorAddRowButton.disabled =
     contentDisabled ||
-    currentEditorPage < currentEditorTotalPages;
+    currentEditorPage < currentEditorTotalPages ||
+    isMasterEditorFilterActive();
+
+  masterEditorTableFilter?.setDisabled(
+    editorIsSaving || editorHasChanges,
+  );
 
   masterEditorFirstPageButton.disabled =
-    editorIsSaving || currentEditorPage <= 1;
+    editorIsSaving || masterEditorFilterLoading ||
+    currentEditorPage <= 1;
   masterEditorPreviousPageButton.disabled =
-    editorIsSaving || currentEditorPage <= 1;
+    editorIsSaving || masterEditorFilterLoading ||
+    currentEditorPage <= 1;
   masterEditorNextPageButton.disabled =
-    editorIsSaving || currentEditorPage >= currentEditorTotalPages;
+    editorIsSaving || masterEditorFilterLoading ||
+    currentEditorPage >= currentEditorTotalPages;
   masterEditorLastPageButton.disabled =
-    editorIsSaving || currentEditorPage >= currentEditorTotalPages;
+    editorIsSaving || masterEditorFilterLoading ||
+    currentEditorPage >= currentEditorTotalPages;
 };
 
 
@@ -511,16 +542,68 @@ const loadCurrentUser = async () => {
   return data.user;
 };
 
+const getMasterEditorFilterState = () => {
+  const state =
+    masterEditorTableFilter?.getState();
+
+  return {
+    query: String(
+      state?.query || "",
+    ).trim(),
+    selectedColumnKeys:
+      Array.from(
+        state?.selectedColumnKeys || [],
+      ),
+  };
+};
+
+const isMasterEditorFilterActive = () =>
+  Boolean(
+    getMasterEditorFilterState().query,
+  );
+
 const loadMasterEditorData = async (
   masterFileId,
   page = currentEditorPage,
+  {
+    filterState =
+      getMasterEditorFilterState(),
+    signal,
+  } = {},
 ) => {
+  const queryParameters =
+    new URLSearchParams({
+      page: String(page),
+      pageSize: String(
+        MASTER_EDITOR_PAGE_SIZE,
+      ),
+    });
+  const searchQuery = String(
+    filterState?.query || "",
+  ).trim();
+  const selectedColumnKeys =
+    Array.from(
+      filterState?.selectedColumnKeys || [],
+    );
+
+  if (searchQuery) {
+    queryParameters.set(
+      "search",
+      searchQuery,
+    );
+    queryParameters.set(
+      "columns",
+      selectedColumnKeys.join(","),
+    );
+  }
+
   const response = await fetch(
     `/api/master-files/${encodeURIComponent(
       masterFileId,
-    )}/editor?page=${encodeURIComponent(
-      page,
-    )}&pageSize=${MASTER_EDITOR_PAGE_SIZE}`,
+    )}/editor?${queryParameters.toString()}`,
+    {
+      signal,
+    },
   );
 
   const data = await response
@@ -1749,6 +1832,16 @@ const renderMasterPagination = (pagination = {}) => {
   currentEditorPage = Number(pagination.page) || 1;
   currentEditorTotalPages = Number(pagination.totalPages) || 1;
   currentEditorTotalRecords = Number(pagination.totalRecords) || 0;
+  const unfilteredTotalRecords =
+    Number(
+      pagination.unfilteredTotalRecords,
+    );
+  currentEditorUnfilteredTotalRecords =
+    Number.isFinite(
+      unfilteredTotalRecords,
+    )
+      ? unfilteredTotalRecords
+      : currentEditorTotalRecords;
 
   const firstRecord = currentEditorTotalRecords === 0
     ? 0
@@ -1769,6 +1862,258 @@ const renderMasterPagination = (pagination = {}) => {
   masterEditorNextPageButton.disabled = isLastPage || editorIsSaving;
   masterEditorLastPageButton.disabled = isLastPage || editorIsSaving;
   masterEditorPagination.classList.remove("hidden");
+};
+
+const updateMasterEditorFilterSummary = (
+  pagination = {},
+) => {
+  if (!masterEditorTableFilter) {
+    return;
+  }
+
+  const matchingRecords =
+    Number(pagination.totalRecords) || 0;
+  const unfilteredRecords = Number(
+    pagination.unfilteredTotalRecords,
+  );
+  const totalRecords = Number.isFinite(
+    unfilteredRecords,
+  )
+    ? unfilteredRecords
+    : currentEditorUnfilteredTotalRecords;
+
+  masterEditorTableFilter.setResultSummary(
+    isMasterEditorFilterActive()
+      ? `${matchingRecords} coincidencias de ${totalRecords} filas`
+      : `${totalRecords} filas`,
+  );
+};
+
+const scheduleMasterEditorFilter = (
+  detail,
+) => {
+  if (
+    suppressMasterEditorFilterChange ||
+    editorHasChanges ||
+    editorIsSaving
+  ) {
+    return;
+  }
+
+  if (masterEditorFilterTimer) {
+    window.clearTimeout(
+      masterEditorFilterTimer,
+    );
+  }
+
+  const filterState = {
+    query: String(
+      detail?.query || "",
+    ).trim(),
+    selectedColumnKeys:
+      Array.from(
+        detail?.selectedColumnKeys || [],
+      ),
+  };
+  const requestId =
+    masterEditorFilterRequestId + 1;
+  masterEditorFilterRequestId =
+    requestId;
+  masterEditorFilterLoading = true;
+  configureEditorPermissions();
+
+
+  masterEditorTableFilter?.setResultSummary(
+    "Buscando...",
+  );
+
+  masterEditorFilterTimer =
+    window.setTimeout(
+      async () => {
+        if (
+          filterState.query &&
+          filterState
+            .selectedColumnKeys.length === 0
+        ) {
+          masterEditorFilterLoading = false;
+          renderMasterTable(
+            orderedMasterHeaders,
+            [],
+          );
+          renderMasterPagination({
+            page: 1,
+            totalPages: 1,
+            totalRecords: 0,
+            unfilteredTotalRecords:
+              currentEditorUnfilteredTotalRecords,
+            isFiltered: true,
+          });
+          updateMasterEditorFilterSummary({
+            totalRecords: 0,
+            unfilteredTotalRecords:
+              currentEditorUnfilteredTotalRecords,
+          });
+          configureEditorPermissions();
+          showEditorMessage(
+            "Selecciona al menos una columna para buscar.",
+            "warning",
+          );
+          return;
+        }
+
+        try {
+          showEditorMessage(
+            filterState.query
+              ? "Buscando en el archivo madre..."
+              : "Restableciendo registros...",
+            "warning",
+          );
+
+          const editorData =
+            await loadMasterEditorData(
+              getMasterFileId(),
+              1,
+              {
+                filterState,
+              },
+            );
+
+          if (
+            requestId !==
+            masterEditorFilterRequestId
+          ) {
+            return;
+          }
+
+          masterEditorFilterLoading = false;
+          currentMasterRevision = Number(
+            editorData.masterFile.revision,
+          );
+          renderMasterMetadata(
+            editorData.masterFile,
+          );
+          renderMasterTable(
+            editorData.masterFile.headers,
+            editorData.records,
+          );
+          renderMasterPagination(
+            editorData.pagination,
+          );
+          updateMasterEditorFilterSummary(
+            editorData.pagination,
+          );
+          configureEditorPermissions();
+          setEditorDirty(false);
+
+          showEditorMessage(
+            filterState.query
+              ? `Coincidencias encontradas: ${editorData.pagination.totalRecords}.`
+              : `Registros restaurados: ${editorData.pagination.totalRecords}.`,
+            "success",
+          );
+        } catch (error) {
+          if (
+            requestId !==
+            masterEditorFilterRequestId
+          ) {
+            return;
+          }
+
+          masterEditorFilterLoading = false;
+          console.error(
+            "Error al filtrar archivo madre:",
+            error,
+          );
+          showEditorMessage(
+            error.message ||
+              "No fue posible filtrar el archivo madre.",
+            "error",
+          );
+          updateMasterEditorFilterSummary({
+            totalRecords:
+              currentEditorTotalRecords,
+            unfilteredTotalRecords:
+              currentEditorUnfilteredTotalRecords,
+          });
+          configureEditorPermissions();
+        }
+      },
+      MASTER_EDITOR_FILTER_DELAY_MS,
+    );
+};
+
+const configureMasterEditorTableFilter = (
+  headers,
+  pagination = {},
+) => {
+  if (!masterEditorTableFilterContainer) {
+    return;
+  }
+
+  const columns =
+    getOrderedHeaders(headers).map(
+      (header) => ({
+        key: String(
+          header.columnIndex,
+        ),
+        label:
+          header.originalName ||
+          header.columnLetter ||
+          `Columna ${header.columnIndex}`,
+      }),
+    );
+
+  if (!masterEditorTableFilter) {
+    suppressMasterEditorFilterChange =
+      true;
+    masterEditorTableFilter =
+      createTableFilter({
+        container:
+          masterEditorTableFilterContainer,
+        columns,
+        getItems: () => [],
+        onChange:
+          scheduleMasterEditorFilter,
+      });
+    suppressMasterEditorFilterChange =
+      false;
+    masterEditorTableFilterContainer
+      .classList.remove("hidden");
+  } else {
+    const currentColumnKeys =
+      masterEditorTableFilter
+        .getState()
+        .columns.map(
+          (column) => column.key,
+        );
+    const nextColumnKeys =
+      columns.map(
+        (column) => column.key,
+      );
+
+    if (
+      currentColumnKeys.join(",") !==
+      nextColumnKeys.join(",")
+    ) {
+      suppressMasterEditorFilterChange =
+        true;
+      masterEditorTableFilter.setColumns(
+        columns,
+        {
+          preserveSelection: true,
+        },
+      );
+      suppressMasterEditorFilterChange =
+        false;
+    }
+  }
+
+  updateMasterEditorFilterSummary(
+    pagination,
+  );
+  masterEditorTableFilter.setDisabled(
+    editorIsSaving || editorHasChanges,
+  );
 };
 
 const loadMasterEditorPage = async (targetPage) => {
@@ -1793,6 +2138,10 @@ const loadMasterEditorPage = async (targetPage) => {
   renderMasterMetadata(editorData.masterFile);
   renderMasterTable(editorData.masterFile.headers, editorData.records);
   renderMasterPagination(editorData.pagination);
+  configureMasterEditorTableFilter(
+    editorData.masterFile.headers,
+    editorData.pagination,
+  );
   configureEditorPermissions();
   setEditorDirty(false);
   showEditorMessage(
@@ -1807,6 +2156,14 @@ const addMasterEditorRow = (
     notifyChanges = true,
   } = {},
 ) => {
+  if (isMasterEditorFilterActive()) {
+    showEditorMessage(
+      "Limpia el filtro antes de agregar filas.",
+      "warning",
+    );
+    return null;
+  }
+
   if (currentEditorPage < currentEditorTotalPages) {
     showEditorMessage(
       "Para agregar filas, navega primero a la última página.",
@@ -2691,16 +3048,22 @@ const saveMasterEditorChanges =
        * las filas nuevas reciban el ID generado
        * por MongoDB.
        */
-      const refreshedPage = Math.min(
-        currentEditorPage,
-        Math.max(
-          1,
-          Math.ceil(
-            Number(data.masterFile?.recordCount || 0) /
-              MASTER_EDITOR_PAGE_SIZE,
-          ),
-        ),
-      );
+      const refreshedPage =
+        isMasterEditorFilterActive()
+          ? 1
+          : Math.min(
+              currentEditorPage,
+              Math.max(
+                1,
+                Math.ceil(
+                  Number(
+                    data.masterFile
+                      ?.recordCount || 0,
+                  ) /
+                    MASTER_EDITOR_PAGE_SIZE,
+                ),
+              ),
+            );
 
       const refreshedData =
         await loadMasterEditorData(
@@ -2728,6 +3091,10 @@ const saveMasterEditorChanges =
       );
 
       renderMasterPagination(
+        refreshedData.pagination,
+      );
+      configureMasterEditorTableFilter(
+        refreshedData.masterFile.headers,
         refreshedData.pagination,
       );
 
@@ -2857,6 +3224,10 @@ const initializeMasterEditor = async () => {
     );
 
     renderMasterPagination(
+      editorData.pagination,
+    );
+    configureMasterEditorTableFilter(
+      editorData.masterFile.headers,
       editorData.pagination,
     );
 

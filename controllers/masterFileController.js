@@ -388,6 +388,8 @@ const getMasterFileEditorData = async (req, res) => {
         user: req.user,
         page: req.query.page,
         pageSize: req.query.pageSize,
+        search: req.query.search,
+        columnIndexes: req.query.columns,
       });
 
     const masterFile = result.masterFile;

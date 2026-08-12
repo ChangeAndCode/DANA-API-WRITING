@@ -932,6 +932,7 @@ const validateManualData = async (req, res) => {
   return res.status(200).json({
     isValid: !validationResult.hasErrors,
     errors: validationResult.errors,
+    rowValidation: validationResult.rowValidation || [],
   });
 };
 
@@ -1015,6 +1016,7 @@ const importManualFile = async (req, res) => {
       Boolean(importResult.hasErrors);
 
     let masterLookupSummary = null;
+    let rowValidation = [];
 
     if (documentType === "splScrap") {
       const selectedTypeOfGoods = String(
@@ -1117,6 +1119,9 @@ const importManualFile = async (req, res) => {
         Boolean(
           validationResult.hasErrors,
         );
+
+      rowValidation =
+        validationResult.rowValidation || [];
     }
     const suggestedAdminFileName = path.parse(originalName).name;
 
@@ -1128,6 +1133,7 @@ const importManualFile = async (req, res) => {
       rows,
       errors,
       hasErrors,
+      rowValidation,
       masterLookupSummary,
       fileName: originalName,
       suggestedAdminFileName,

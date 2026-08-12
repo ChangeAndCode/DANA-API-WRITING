@@ -358,7 +358,64 @@ const applyBusinessValidations = async (data, documentType) => {
   return { isValid: errors.length === 0, errors };
 };
 
+const remapValidationErrorRow = (error, rowNumber) => {
+  const safeError =
+    error && typeof error === "object"
+      ? error
+      : { message: String(error || "Validation error.") };
+  const message = String(safeError.message || "Validation error.").replace(
+    /^Row\s+\d+:/i,
+    `Row ${rowNumber}:`,
+  );
+
+  return {
+    ...safeError,
+    message,
+    row: rowNumber,
+  };
+};
+
+const classifyRowsByValidation = async (
+  data,
+  documentType,
+  options = {},
+) => {
+  const records = Array.isArray(data?.Sheet1) ? data.Sheet1 : [];
+  const rowValidation = [];
+
+  for (let index = 0; index < records.length; index += 1) {
+    const rowNumber = index + 2;
+    const rowData = { Sheet1: [records[index]] };
+    const integrityResult = validateDataIntegrity(
+      rowData,
+      documentType,
+      options,
+    );
+    const errors = [...integrityResult.errors];
+
+    if (integrityResult.isValid) {
+      const businessResult = await applyBusinessValidations(
+        rowData,
+        documentType,
+      );
+      errors.push(...businessResult.errors);
+    }
+
+    rowValidation.push({
+      index,
+      row: rowNumber,
+      isValid: errors.length === 0,
+      errors: errors.map((error) =>
+        remapValidationErrorRow(error, rowNumber),
+      ),
+    });
+  }
+
+  return rowValidation;
+};
+
 module.exports = {
   validateDataIntegrity,
   applyBusinessValidations,
+  classifyRowsByValidation,
 };
