@@ -114,7 +114,7 @@ let renderingCreationPage = false;
 let activeCreationDocumentType = "";
 const creationRowValidationTimers = new Map();
 const creationDocumentValidationTimers = new Map();
-const CREATION_ROW_VALIDATION_DELAY_MS = 220;
+const CREATION_ROW_VALIDATION_DELAY_MS = 80;
 
 function canAddCreationRow(documentType) {
   if (renderingCreationPage) return true;
@@ -149,7 +149,7 @@ function canAddCreationRow(documentType) {
 
 const masterLookupTimers = new WeakMap();
 const masterLookupControllers = new WeakMap();
-const MASTER_LOOKUP_DELAY_MS = 350;
+const MASTER_LOOKUP_DELAY_MS = 150;
 
 const map = {
   finishedProduct: "format-finishedProduct",
@@ -2177,6 +2177,36 @@ function scheduleMasterLookup(
   );
 }
 
+function hasPendingMasterLookupForRow(
+  rowElement,
+  documentType,
+) {
+  if (!rowElement) return false;
+
+  if (documentType === 'billOfMaterials') {
+    return (
+      masterLookupTimers.has(rowElement) ||
+      masterLookupControllers.has(rowElement)
+    );
+  }
+
+  return getMasterLookupInputKeys(
+    documentType,
+  ).some((inputKey) => {
+    const input = getRowEditorByColumnKey(
+      rowElement,
+      documentType,
+      inputKey,
+    );
+
+    return Boolean(
+      input &&
+        (masterLookupTimers.has(input) ||
+          masterLookupControllers.has(input)),
+    );
+  });
+}
+
 function bindMasterLookupForRow(rowElement, documentType) {
   if (!rowElement) return;
 
@@ -3109,6 +3139,132 @@ function setSplScrapRows(rows = [], rowValidation = []) {
     rowValidation,
   );
 }
+function cancelMasterLookupForKey(key) {
+  if (!key) return;
+
+  const timer = masterLookupTimers.get(key);
+  if (timer) {
+    window.clearTimeout(timer);
+    masterLookupTimers.delete(key);
+  }
+
+  const controller =
+    masterLookupControllers.get(key);
+  if (controller) {
+    controller.abort();
+    masterLookupControllers.delete(key);
+  }
+}
+
+function cancelMasterLookupsForDocumentType(
+  documentType,
+) {
+  const config =
+    getCreationPaginationConfig(documentType);
+
+  if (!config?.tbody) return;
+
+  Array.from(
+    config.tbody.querySelectorAll('tr'),
+  ).forEach((rowElement) => {
+    if (documentType === 'billOfMaterials') {
+      cancelMasterLookupForKey(rowElement);
+      return;
+    }
+
+    getMasterLookupInputKeys(
+      documentType,
+    ).forEach((inputKey) => {
+      cancelMasterLookupForKey(
+        getRowEditorByColumnKey(
+          rowElement,
+          documentType,
+          inputKey,
+        ),
+      );
+    });
+  });
+}
+
+function cancelCreationValidationForDocumentType(
+  documentType,
+) {
+  const state =
+    fileCreationPageState[documentType];
+
+  if (Array.isArray(state?.rows)) {
+    state.rows.forEach((row) => {
+      const rowId = getCreationRowId(row);
+      const timer =
+        creationRowValidationTimers.get(rowId);
+
+      if (timer) {
+        window.clearTimeout(timer);
+        creationRowValidationTimers.delete(rowId);
+      }
+    });
+  }
+
+  const documentTimer =
+    creationDocumentValidationTimers.get(
+      documentType,
+    );
+  if (documentTimer) {
+    window.clearTimeout(documentTimer);
+    creationDocumentValidationTimers.delete(
+      documentType,
+    );
+  }
+}
+
+function resetCreationFormAfterSuccess(
+  documentType,
+) {
+  cancelMasterLookupsForDocumentType(
+    documentType,
+  );
+  cancelCreationValidationForDocumentType(
+    documentType,
+  );
+  closeAllCatalogAutocompleteMenus();
+
+  const filter =
+    creationTableFilters[documentType];
+
+  if (adminFileNameInput) {
+    adminFileNameInput.value = '';
+  }
+  if (importFileInput) {
+    importFileInput.value = '';
+  }
+  editingFileId = '';
+
+  const emptyRows = Array.from(
+    { length: 5 },
+    () => ({}),
+  );
+
+  if (documentType === 'finishedProduct') {
+    setFinishedProductRows(emptyRows);
+  } else if (documentType === 'rawMaterial') {
+    setRawMaterialRows(emptyRows);
+  } else if (documentType === 'billOfMaterials') {
+    setBillOfMaterialsRows(emptyRows);
+  } else if (documentType === 'splScrap') {
+    applySplScrapTypeOfGoodsRestriction(false);
+    setSplScrapRows(emptyRows);
+
+    Object.values(splMetaInputs).forEach(
+      (input) => input?.setCustomValidity(''),
+    );
+    applySplScrapShipmentMode();
+  }
+
+  if (filter) {
+    filter.clear();
+  }
+}
+
 // Utilidad para scroll interno en tablas si hay más de 6 filas
 function updateTableScroll(tbody) {
   if (!tbody) return;
@@ -4598,6 +4754,9 @@ async function createManualFile(documentType, rows, displayName) {
         documentType: data.documentType,
         lastDownloadedName: data.lastDownloadedName,
       });
+      resetCreationFormAfterSuccess(
+        data.documentType || documentType,
+      );
     } else if (data.status === "completed_with_errors") {
       renderWarning(data.errors || [], data.jobId);
     } else {
@@ -4676,6 +4835,114 @@ function applyCreationRowValidationResults(
   renderCreationPage(documentType);
 }
 
+function captureCreationEditorFocus(
+  documentType,
+) {
+  const config =
+    getCreationPaginationConfig(documentType);
+  const state =
+    fileCreationPageState[documentType];
+  const editor = document.activeElement;
+
+  if (
+    !config?.tbody ||
+    !state ||
+    !Array.isArray(state.rows) ||
+    !(
+      editor instanceof HTMLInputElement ||
+      editor instanceof HTMLSelectElement
+    ) ||
+    !config.tbody.contains(editor)
+  ) {
+    return null;
+  }
+
+  const rowElement = editor.closest('tr');
+  const sourceIndex = Number(
+    rowElement?.dataset.creationSourceIndex,
+  );
+  const row = Number.isInteger(sourceIndex)
+    ? state.rows[sourceIndex]
+    : null;
+  const editorIndex =
+    getRowEditorsForDocumentType(
+      rowElement,
+    ).indexOf(editor);
+
+  if (!row || editorIndex < 0) {
+    return null;
+  }
+
+  return {
+    rowId: ensureCreationRowId(row),
+    editorIndex,
+    selectionStart:
+      typeof editor.selectionStart === 'number'
+        ? editor.selectionStart
+        : null,
+    selectionEnd:
+      typeof editor.selectionEnd === 'number'
+        ? editor.selectionEnd
+        : null,
+  };
+}
+
+function restoreCreationEditorFocus(
+  documentType,
+  snapshot,
+) {
+  if (!snapshot?.rowId) return;
+
+  const config =
+    getCreationPaginationConfig(documentType);
+  const state =
+    fileCreationPageState[documentType];
+
+  if (!config?.tbody || !Array.isArray(state?.rows)) {
+    return;
+  }
+
+  const sourceIndex = state.rows.findIndex(
+    (row) =>
+      getCreationRowId(row) === snapshot.rowId,
+  );
+  const rowElement = Array.from(
+    config.tbody.querySelectorAll('tr'),
+  ).find(
+    (candidate) =>
+      Number(
+        candidate.dataset.creationSourceIndex,
+      ) === sourceIndex,
+  );
+  const editor =
+    getRowEditorsForDocumentType(
+      rowElement,
+    )[snapshot.editorIndex];
+
+  if (!editor || editor.disabled) return;
+
+  try {
+    editor.focus({ preventScroll: true });
+  } catch (_error) {
+    editor.focus();
+  }
+
+  if (
+    editor instanceof HTMLInputElement &&
+    snapshot.selectionStart !== null &&
+    snapshot.selectionEnd !== null
+  ) {
+    try {
+      editor.setSelectionRange(
+        snapshot.selectionStart,
+        snapshot.selectionEnd,
+      );
+    } catch (_error) {
+      // Algunos tipos de input no permiten seleccionar texto.
+    }
+  }
+}
+
 function reorderCreationRowsFromStoredValidation(
   documentType,
   trackedRowId = "",
@@ -4683,6 +4950,8 @@ function reorderCreationRowsFromStoredValidation(
   const state = fileCreationPageState[documentType];
   if (!state || !Array.isArray(state.rows)) return;
 
+  const focusSnapshot =
+    captureCreationEditorFocus(documentType);
   const rowValidation = state.rows.map((row, index) => ({
     ...(getCreationRowValidation(row) || {}),
     index,
@@ -4697,10 +4966,12 @@ function reorderCreationRowsFromStoredValidation(
     setCreationRowValidation(row, validation),
   );
 
-  const trackedIndex = trackedRowId
+  const rowIdToKeepVisible =
+    focusSnapshot?.rowId || trackedRowId;
+  const trackedIndex = rowIdToKeepVisible
     ? state.rows.findIndex(
         (row) =>
-          getCreationRowId(row) === trackedRowId,
+          getCreationRowId(row) === rowIdToKeepVisible,
       )
     : -1;
 
@@ -4711,6 +4982,10 @@ function reorderCreationRowsFromStoredValidation(
         ) + 1
       : 1;
   renderCreationPage(documentType);
+  restoreCreationEditorFocus(
+    documentType,
+    focusSnapshot,
+  );
 }
 
 async function validateAndPrioritizeCreationRows(
@@ -4774,6 +5049,12 @@ async function revalidateSingleCreationRow(
       [validationRow],
     );
 
+  /*
+   * Conserva cualquier valor que el usuario haya escrito
+   * en otra celda mientras la validacion estaba en curso.
+   */
+  persistVisibleCreationPage(documentType);
+
   rowIndex = state.rows.findIndex(
     (row) => getCreationRowId(row) === rowId,
   );
@@ -4798,10 +5079,22 @@ async function revalidateSingleCreationRow(
     isValid: false,
     errors: [],
   };
+  const previousIsValid =
+    getCreationRowValidation(
+      state.rows[rowIndex],
+    )?.isValid === true;
+  const nextIsValid =
+    validation.isValid === true;
+
   setCreationRowValidation(
     state.rows[rowIndex],
     validation,
   );
+
+  if (previousIsValid === nextIsValid) {
+    return;
+  }
+
   reorderCreationRowsFromStoredValidation(
     documentType,
     rowId,
@@ -4846,6 +5139,27 @@ function scheduleCreationRowRevalidation(
 
   const timer = window.setTimeout(() => {
     creationRowValidationTimers.delete(rowId);
+
+    /*
+     * Al pegar o terminar de editar un Part Number, la
+     * validacion no debe volver a dibujar la fila antes
+     * de que termine su consulta al archivo madre. De lo
+     * contrario, el autollenado se aplica a una fila que
+     * ya fue retirada del DOM.
+     */
+    if (
+      hasPendingMasterLookupForRow(
+        rowElement,
+        documentType,
+      )
+    ) {
+      scheduleCreationRowRevalidation(
+        documentType,
+        rowElement,
+      );
+      return;
+    }
+
     revalidateSingleCreationRow(
       documentType,
       rowId,
