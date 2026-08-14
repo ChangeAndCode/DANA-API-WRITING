@@ -1,6 +1,7 @@
 // data/countryCatalog.js
 const path = require("path");
 const fs = require("fs");
+const { normalizeCatalogLookup } = require("../utils/catalogNormalization");
 
 let xlsx = null;
 try {
@@ -24,6 +25,7 @@ const CATALOG_SIGNATURE_TTL_MS = Number(
 );
 
 let cache = null;
+let databaseCache = null;
 
 const COUNTRY_BY_CODE = {
   AD: "ANDORRA",
@@ -320,12 +322,7 @@ const pickColumn = (row, candidatesUpper) => {
   return null;
 };
 
-const normalizeName = (value) =>
-  String(value || "")
-    .normalize("NFKD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toUpperCase()
-    .trim();
+const normalizeName = normalizeCatalogLookup;
 
 const getCatalogSignature = (filePath) => {
   const parts = [
@@ -352,6 +349,7 @@ const buildCountryOptions = (codeToName) =>
   Array.from(codeToName.keys()).sort((left, right) => left.localeCompare(right));
 
 function loadCatalogOnce() {
+  if (databaseCache) return databaseCache;
   const now = Date.now();
   if (
     cache &&
@@ -444,6 +442,18 @@ function loadCatalogOnce() {
   return cache;
 }
 
+function setDatabaseCatalog(entries) {
+  const codeToName = new Map();
+  const nameToCode = new Map();
+  for (const entry of entries || []) {
+    const code = String(entry.code || "").trim().toUpperCase();
+    if (!code || entry.isActive === false) continue;
+    const description = String(entry.description || code).trim();
+    codeToName.set(code, description);
+    [description, ...(Array.isArray(entry.aliases) ? entry.aliases : [])].forEach((name) => { const key = normalizeName(name); if (key) nameToCode.set(key, code); });
+  }
+  databaseCache = { codeToName, nameToCode, options: buildCountryOptions(codeToName), signature: "mongodb", checkedAt: Date.now() };
+}
 function isValidCountryCode(code) {
   const { codeToName } = loadCatalogOnce();
   return codeToName.has(
@@ -492,4 +502,5 @@ module.exports = {
   nameToCode: nameToCodeFn,
   getCountryNameToCode,
   getCountryOptions,
+  setDatabaseCatalog,
 };

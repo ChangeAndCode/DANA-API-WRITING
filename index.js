@@ -26,11 +26,13 @@ const masterFileRoutes = require(
 // Import authentication/authorization middleware (assuming these exist from version 2)
 const {
   authenticateRequest,
+  ensureApiAccess,
   ensureAdmin,
 } = require("./middleware/authMiddleware");
 
 // Import connection to DB utility
 const connectDB = require("./config/db");
+const { initializeCatalogs } = require("./services/catalogService");
 
 // NEW: Import cron scheduler and automated processing service for startup
 const { startAutomatedFileProcessor } = require("./config/cronScheduler");
@@ -50,7 +52,7 @@ app.set("trust proxy", 1);
 
 // --- TEMPORARY DEBUGGING LINE ---
 // Uncomment this line to check if MONGO_URI is loaded correctly from your .env
-console.log("DEBUG: MONGO_URI from .env:", process.env.MONGO_URI);
+// Never log MONGO_URI because it may contain database credentials.
 // If this logs 'undefined' or an empty string, check your .env file or its path.
 // --- END TEMPORARY DEBUGGING LINE ---
 
@@ -99,8 +101,17 @@ setupPassportJwt(passport); // Set up JWT strategy
 // This middleware should be placed BEFORE any specific HTML routes below,
 // so that linked assets are found first.
 app.get(
+  ["/file-admin.html", "/catalog-admin.html"],
+  authenticateRequest,
+  ensureApiAccess,
+  ensureAdmin,
+  (req, res) => res.sendFile(path.join(__dirname, "dist", req.path.slice(1))),
+);
+
+app.get(
   ["/master-files.html", "/master-file-editor.html"],
   authenticateRequest,
+  ensureApiAccess,
   ensureAdmin,
   (req, res) => {
     const fileName = req.path.slice(1);
@@ -211,6 +222,7 @@ const startServer = async () => {
   // 3. Conexión a la Base de Datos
   // This function in config/db.js should use process.env.MONGO_URI
   await connectDB();
+  await initializeCatalogs();
 
   // --- Initialize Automated File Processing ---
   // Ensure the necessary directories for automated processing exist ONCE on application start

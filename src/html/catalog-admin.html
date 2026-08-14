@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Administración de Catálogos</title>
+  <link rel="stylesheet" href="../css/main.css" />
+  <link rel="stylesheet" href="../css/table-filter.css" />
+  <link rel="stylesheet" href="../css/catalog-admin.css" />
+</head>
+<body>
+  <main class="container catalog-page">
+    <h1>Administración de Catálogos</h1>
+    <div class="catalog-tabs" role="tablist">
+      <button class="button catalog-tab active" data-type="uom" type="button">Unit of Measure</button>
+      <button class="button catalog-tab" data-type="countries" type="button">Country of Origin</button>
+    </div>
+    <section class="catalog-card">
+      <div class="catalog-heading">
+        <div><h2 id="catalogTitle">Unit of Measure</h2><p id="catalogSubtitle">Unidades disponibles para validación y creación de archivos.</p></div>
+        <button id="createCatalogBtn" class="button" type="button">Crear</button>
+      </div>
+      <div id="catalogMessage" class="catalog-message hidden" role="status" aria-live="polite"></div>
+      <div id="catalogFilter"></div>
+      <div class="catalog-table-scroll">
+        <table class="data-table catalog-table">
+          <thead id="catalogTableHead"></thead>
+          <tbody id="catalogTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+    <nav class="dashboard-nav">
+      <a class="button" href="/file-admin.html">Administrar Archivos</a>
+      <a class="button" href="/auth/dashboard">Volver al Dashboard</a>
+      <a class="button" href="/file-creation">Crear Archivos</a>
+    </nav>
+  </main>
+
+  <div id="catalogModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="catalogModalTitle">
+    <form id="catalogForm" class="modal catalog-form">
+      <h2 id="catalogModalTitle">Crear valor</h2>
+      <label>Código<input id="catalogCode" name="code" required autocomplete="off" /></label>
+      <label>Descripción<input id="catalogDescription" name="description" required autocomplete="off" /></label>
+      <label id="originField">Origin<input id="catalogOrigin" name="origin" maxlength="3" autocomplete="off" /></label>
+      <label id="decimalsField" class="catalog-checkbox"><input id="catalogDecimals" name="allowsDecimals" type="checkbox" /> Permite decimales</label>
+      <label>Alias<textarea id="catalogAliases" name="aliases" rows="4" placeholder="Uno por línea o separados por comas"></textarea></label>
+      <p class="catalog-help">Los alias permiten reconocer otros idiomas, abreviaturas y nombres alternativos.</p>
+      <div id="catalogFormError" class="catalog-message error hidden" role="alert"></div>
+      <div class="modal-actions"><button id="cancelCatalogBtn" class="button" type="button">Cancelar</button><button id="saveCatalogBtn" class="button" type="submit">Guardar</button></div>
+    </form>
+  </div>
+
+  <div id="deleteCatalogModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="deleteCatalogTitle">
+    <div class="modal"><h2 id="deleteCatalogTitle">Eliminar valor permanentemente</h2><p id="deleteCatalogText"></p><p>Esta acción eliminará permanentemente el valor de MongoDB y no se puede deshacer.</p><div class="modal-actions"><button id="cancelDeleteCatalogBtn" class="button" type="button">Cancelar</button><button id="confirmDeleteCatalogBtn" class="row-remove-btn" type="button">Eliminar</button></div></div>
+  </div>
+  <script type="module" src="../js/catalog-admin.js"></script>
+</body>
+</html>

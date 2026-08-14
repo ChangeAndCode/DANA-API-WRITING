@@ -1,0 +1,172 @@
+.catalog-page { max-width: 1280px; }
+.catalog-tabs { display: flex; gap: 10px; margin: 20px 0; }
+.catalog-tab.active { background: #245ea8; }
+.catalog-card { background: #fff; border-radius: 10px; padding: 22px; box-shadow: 0 2px 10px rgba(0,0,0,.1); }
+.catalog-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.catalog-heading h2 { margin-bottom: 4px; }
+.catalog-heading p { margin-top: 0; color: #667085; }
+.catalog-table-scroll {
+  width: 100%;
+  max-height: 570px;
+  margin-top: 16px;
+  overflow: auto;
+  border: 1px solid #d7dce2;
+}
+.catalog-table {
+  width: 100%;
+  min-width: 760px;
+  margin: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+  background-color: #fff;
+}
+.catalog-table th,
+.catalog-table td {
+  height: 52px;
+  padding: 8px 10px;
+  border: 1px solid #e0e0e0;
+  box-sizing: border-box;
+  font-size: .9em;
+  text-align: left;
+  vertical-align: middle;
+}
+.catalog-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: 44px;
+  background-color: #f5f8fb;
+  box-shadow: 0 1px 0 #d9dee5;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.catalog-table th:first-child,
+.catalog-table td:first-child { width: 13%; }
+.catalog-table th:nth-child(2),
+.catalog-table td:nth-child(2) { width: 24%; }
+.catalog-table th:last-child,
+.catalog-table td:last-child { width: 150px; min-width: 150px; }
+.catalog-aliases { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+td.catalog-actions {
+  display: table-cell;
+  text-align: center;
+  white-space: nowrap;
+}
+.catalog-table-scroll::-webkit-scrollbar-thumb { background: #707070; border-radius: 4px; }
+.catalog-table-scroll::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }.catalog-message { margin: 12px 0; padding: 10px 12px; border-radius: 5px; background: #e8f4ff; color: #164d7a; }
+.catalog-message.error { background: #fdecec; color: #9b1c1c; }
+.catalog-message.success { background: #eaf7ed; color: #1d6b2d; }
+.catalog-form { display: grid; gap: 13px; max-width: 560px; }
+.catalog-form label { display: grid; gap: 6px; font-weight: 600; }
+.catalog-form input, .catalog-form textarea { width: 100%; box-sizing: border-box; }
+.catalog-form .catalog-checkbox { display: flex; align-items: center; gap: 8px; }
+.catalog-form .catalog-checkbox input { width: auto; }
+.catalog-help { color: #667085; font-size: .9rem; margin: -5px 0 0; }
+@media (max-width: 760px) { .catalog-heading { align-items: stretch; flex-direction: column; } .catalog-table-scroll { overflow-x: auto; } }
+
+.catalog-page .dashboard-nav a,
+.catalog-page .dashboard-nav button {
+  background-color: #007bff;
+  box-shadow: 0 2px 5px rgba(0, 123, 255, .2);
+}
+.catalog-page .dashboard-nav a:hover,
+.catalog-page .dashboard-nav button:hover {
+  background-color: #0056b3;
+  box-shadow: 0 4px 8px rgba(0, 123, 255, .3);
+}
+
+.catalog-action-btn {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  margin: 0 3px;
+  padding: 7px;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .14);
+  transition: background-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.catalog-action-btn svg { width: 20px; height: 20px; display: block; margin: auto; pointer-events: none; }
+.catalog-edit-btn { background-color: #17a2b8; }
+.catalog-edit-btn:hover { background-color: #117a8b; transform: translateY(-1px); }
+.catalog-delete-btn { background-color: #ed304f; }
+.catalog-delete-btn:hover { background-color: #c82343; transform: translateY(-1px); }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, .45);
+}
+.modal-overlay.hidden { display: none !important; }
+.modal {
+  width: min(520px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 24px 28px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .24);
+  text-align: left;
+}
+.modal h2 { margin: 0 0 20px; color: #2c3e50; }
+.catalog-form { display: grid; gap: 14px; max-width: 560px; }
+.catalog-form label { display: grid; gap: 7px; color: #333; font-weight: 600; }
+.catalog-form input:not([type="checkbox"]),
+.catalog-form textarea {
+  width: 100%;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #fff;
+  color: #263342;
+  font: inherit;
+}
+.catalog-form textarea { min-height: 96px; resize: vertical; }
+.catalog-form input:focus,
+.catalog-form textarea:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, .12);
+}
+.catalog-form input:disabled { color: #5f6b78; background: #eef2f6; cursor: not-allowed; }
+.catalog-form .catalog-checkbox { display: flex; align-items: center; gap: 9px; }
+.catalog-form .catalog-checkbox input { width: 17px; height: 17px; margin: 0; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 6px; }
+.modal-actions button { min-width: 112px; margin: 0; }
+#confirmDeleteCatalogBtn { background-color: #ed304f; box-shadow: 0 2px 5px rgba(237, 48, 79, .25); }
+#confirmDeleteCatalogBtn:hover { background-color: #c82343; }
+#deleteCatalogModal .modal { max-width: 500px; }
+#deleteCatalogModal p { color: #4b5563; line-height: 1.5; }
+
+@media (max-width: 600px) {
+  .modal { padding: 20px; }
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions button { width: 100%; }
+}
+
+.catalog-enable-btn { background-color: #28a745; }
+.catalog-enable-btn:hover { background-color: #1e7e34; transform: translateY(-1px); }
+.catalog-disable-btn { background-color: #f0ad21; }
+.catalog-disable-btn:hover { background-color: #cf8f0d; transform: translateY(-1px); }
+.catalog-status {
+  display: inline-block;
+  min-width: 62px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: .82em;
+  font-weight: 700;
+  text-align: center;
+}
+.catalog-status.active { color: #176b3a; background: #dcfae6; }
+.catalog-status.inactive { color: #667085; background: #e9edf2; }
+.catalog-table tr.catalog-row-inactive td { color: #7b8490; background: #fafbfc; }

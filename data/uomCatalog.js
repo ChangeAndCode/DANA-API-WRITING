@@ -1,6 +1,7 @@
 // /data/uomCatalog.js
 const path = require("path");
 const fs = require("fs");
+const { normalizeCatalogLookup } = require("../utils/catalogNormalization");
 
 let xlsx = null;
 try {
@@ -35,6 +36,7 @@ const STATIC_UOM = {
 };
 
 let cache = null;
+let databaseCache = null;
 
 const resolveCatalogPath = () => {
   const envPath = process.env.UOM_CATALOG_PATH;
@@ -48,12 +50,7 @@ const resolveCatalogPath = () => {
   return path.join(__dirname, DEFAULT_UOM_FILES[0]);
 };
 
-const normalizeName = (value) =>
-  String(value || "")
-    .normalize("NFKD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toUpperCase()
-    .trim();
+const normalizeName = normalizeCatalogLookup;
 
 const getCatalogSignature = (filePath) => {
   const parts = [
@@ -82,6 +79,8 @@ const buildUOMOptions = (codeToInfo) =>
       code,
       description: info && info.description ? info.description : code,
       decimals: info && Number.isFinite(info.decimals) ? info.decimals : 0,
+      origin: info && info.origin ? info.origin : "",
+      aliases: Array.isArray(info && info.aliases) ? info.aliases.slice() : [],
       label:
         info && info.description && info.description !== code
           ? `${code} - ${info.description}`
@@ -90,6 +89,7 @@ const buildUOMOptions = (codeToInfo) =>
     .sort((left, right) => left.code.localeCompare(right.code));
 
 function loadUOMOnce() {
+  if (databaseCache) return databaseCache;
   const now = Date.now();
   if (
     cache &&
@@ -137,7 +137,8 @@ function loadUOMOnce() {
         }
         if (!code) continue;
 
-        codeToInfo.set(code, { description: desc || code, decimals });
+        const origin = String(row.Origin || row.ORIGIN || "").trim().toUpperCase();
+        codeToInfo.set(code, { description: desc || code, decimals, origin, aliases: [] });
         if (desc) nameToCode.set(normalizeName(desc), code);
         added += 1;
       }
@@ -167,6 +168,19 @@ function loadUOMOnce() {
   return cache;
 }
 
+function setDatabaseCatalog(entries) {
+  const codeToInfo = new Map();
+  const nameToCode = new Map();
+  for (const entry of entries || []) {
+    const code = String(entry.code || "").trim().toUpperCase();
+    if (!code || entry.isActive === false) continue;
+    const aliases = Array.isArray(entry.aliases) ? entry.aliases.slice() : [];
+    const info = { description: String(entry.description || code).trim(), origin: String(entry.origin || "").trim().toUpperCase(), decimals: entry.allowsDecimals ? 3 : 0, allowsDecimals: Boolean(entry.allowsDecimals), aliases };
+    codeToInfo.set(code, info);
+    [info.description, ...aliases].forEach((name) => { const key = normalizeName(name); if (key) nameToCode.set(key, code); });
+  }
+  databaseCache = { codeToInfo, nameToCode, options: buildUOMOptions(codeToInfo), signature: "mongodb", checkedAt: Date.now() };
+}
 function isValidUOMCode(code) {
   const { codeToInfo } = loadUOMOnce();
   return codeToInfo.has(
@@ -239,4 +253,5 @@ module.exports = {
   getUOMDecimals,
   normalizeUOM,
   getUOMOptions,
+  setDatabaseCatalog,
 };

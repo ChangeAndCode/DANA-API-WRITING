@@ -51,7 +51,7 @@ async function fetchUserData() {
       const user = data.user;
       userNameElement.textContent = user.displayName || user.email;
       userSiteElement.textContent =
-        formatSite(user.site) || 'Administrador (sin sede asignada)';
+        formatSite(user.site) || 'Administrador';
       apiAccessStatusElement.textContent = user.isActive
         ? 'Activo'
         : 'Inactivo (contacta al admin)';

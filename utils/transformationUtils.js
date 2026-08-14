@@ -19,15 +19,6 @@ const COUNTRY_OF_ORIGIN_FIELDS = [
   "Country of origin",
   "FDA Country of Origin",
 ];
-const COUNTRY_CODE_ALIASES = new Map([
-  ["USA", "US"],
-  ["UNITEDSTATESOFAMERICA", "US"],
-
-  ["GERMANY", "DE"],
-  ["ROMANIA", "RO"],
-  ["TURKEY", "TR"],
-  ["DEVELOPLOCALLYINMEXICO", "MX"],
-]);
 
 /**
  * Removes currency symbols and thousands separators from monetary fields.
@@ -88,11 +79,6 @@ function isHTSField(fieldName, documentType) {
 function normalizeCountryOfOrigin(value) {
   if (value == null) return value;
   const raw = String(value).trim();
-  const compact = raw.toUpperCase().replace(/[^A-Z]/g, "");
-
-  const aliasedCode = COUNTRY_CODE_ALIASES.get(compact);
-  if (aliasedCode) return aliasedCode;
-
   // If it looks like "MX-Mexico" or "MX / Mexico", take the code part
   const parts = raw.split(/[\s/-]+/).filter(Boolean);
   if (parts.length) {
