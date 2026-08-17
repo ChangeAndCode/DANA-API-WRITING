@@ -5,9 +5,7 @@ const conversionJobSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    // Now optional, as automated jobs won't have a direct user
-    // Only required if not isAutomated, but Mongoose doesn't support complex 'required' logic
-    // Best practice is to make it not required here, and handle validation in the service/controller
+    required: true,
   },
   site: {
     type: String,
@@ -33,19 +31,12 @@ const conversionJobSchema = new mongoose.Schema({
   },
   convertedFilePath: String,
   errorReportPath: String,
-  // Rutas remotas en SFTP para poder gestionar reemplazos
-  remoteConvertedPath: String,
-  remoteErrorPath: String,
   createdAt: {
     type: Date,
     default: Date.now,
   },
   completedAt: Date,
   conversionOptions: Object,
-  isAutomated: { 
-    type: Boolean,
-    default: false,
-  },
   errorMessage: String,
 });
 

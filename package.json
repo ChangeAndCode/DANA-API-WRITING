@@ -6,11 +6,9 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "dev:backend": "node index.js",
-    "dev:backend:test": "node index.js",
     "build": "npm install --include=dev && node esbuild.config.js build",
     "dev:frontend": "node esbuild.config.js dev",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:test": "concurrently \"npm run dev:backend:test\" \"npm run dev:frontend\"",
     "start": "npm run build && node index.js"
   },
   "author": "",

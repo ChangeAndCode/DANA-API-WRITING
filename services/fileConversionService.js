@@ -255,9 +255,7 @@ const processFileForConversion = async (
   fileBuffer,
   originalName,
   outputFormat,
-  conversionOptions,
-  callerUserId = null,
-  isAutomated = false
+  conversionOptions
 ) => {
   const fileExtension = path.extname(originalName).toLowerCase();
   let errorReport = [];

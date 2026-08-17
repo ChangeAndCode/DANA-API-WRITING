@@ -98,19 +98,12 @@ const resolveDocumentSiteForWrite = (user, fallbackSite = "") => {
     : "";
 };
 
-const assertUserCanAccessConversionJob = (
-  job,
-  user,
-  automatedMessage = "Acceso denegado."
-) => {
-  if (!job.userId && job.isAutomated) {
-    if (!isAdminUser(user)) {
-      throw createHttpError(403, automatedMessage);
-    }
-    return;
-  }
-
+const assertUserCanAccessConversionJob = (job, user) => {
   if (isAdminUser(user)) return;
+
+  if (!job.userId) {
+    throw createHttpError(403, "Acceso denegado.");
+  }
 
   const userSite = getScopedUserSite(user);
   const jobSite = normalizeUserSite(job?.site);
@@ -122,7 +115,7 @@ const assertUserCanAccessConversionJob = (
     return;
   }
 
-  if (job.userId && job.userId.toString() !== user.id.toString()) {
+  if (job.userId.toString() !== user.id.toString()) {
     throw createHttpError(403, "Acceso denegado.");
   }
 };
@@ -740,7 +733,6 @@ const uploadAndConvertFile = async (req, res) => {
       outputFormat: outputFormat,
       conversionOptions: conversionOptions,
       status: "processing",
-      isAutomated: false,
     });
 
     const { convertedFilePath, errorReportPath, status } =
@@ -748,13 +740,8 @@ const uploadAndConvertFile = async (req, res) => {
         fileBuffer, // Use the buffer we already read
         originalname,
         outputFormat,
-        conversionOptions,
-        req.user.id,
-        false
+        conversionOptions
       );
-
-    
-
     await conversionJobRepository.updateConversionJobStatus(newJob._id, status, {
       convertedFilePath,
       errorReportPath,
@@ -809,11 +796,7 @@ const getConvertedFile = async (req, res) => {
 
     // Authorization checks
     try {
-      assertUserCanAccessConversionJob(
-        job,
-        req.user,
-        "Acceso denegado. Este es un archivo de conversión automatizado."
-      );
+      assertUserCanAccessConversionJob(job, req.user);
     } catch (accessError) {
       return res.status(accessError.statusCode || 403).json({
         message: accessError.message,
@@ -880,11 +863,7 @@ const getErrorReport = async (req, res) => {
 
     // Authorization checks
     try {
-      assertUserCanAccessConversionJob(
-        job,
-        req.user,
-        "Acceso denegado. Este es un reporte de errores automatizado."
-      );
+      assertUserCanAccessConversionJob(job, req.user);
     } catch (accessError) {
       return res.status(accessError.statusCode || 403).json({
         message: accessError.message,
@@ -1231,7 +1210,6 @@ const createManualFile = async (req, res) => {
         displayName: normalizedName || undefined,
       },
       status: "processing",
-      isAutomated: false,
     });
     
 

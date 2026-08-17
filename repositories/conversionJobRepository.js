@@ -13,7 +13,6 @@ const createConversionJob = async ({
   outputFormat,
   conversionOptions,
   status,
-  isAutomated = false,
 }) => {
   const newJob = new ConversionJob({
     userId,
@@ -23,7 +22,6 @@ const createConversionJob = async ({
     outputFormat,
     conversionOptions,
     status,
-    isAutomated,
   });
   return await newJob.save();
 };
@@ -45,7 +43,6 @@ const getPaginatedJobsForUserScope = async (
 
   const query = normalizedSite
     ? {
-        isAutomated: false,
         $or: [
           { site: normalizedSite },
           { userId: userId, site: { $exists: false } },
@@ -53,7 +50,6 @@ const getPaginatedJobsForUserScope = async (
       }
     : {
         userId: userId,
-        isAutomated: false,
       };
 
   const [jobs, totalJobs] = await Promise.all([
@@ -95,8 +91,6 @@ const updateConversionJobStatus = async (
   {
     convertedFilePath = null,
     errorReportPath = null,
-    remoteConvertedPath = null,
-    remoteErrorPath = null,
     completedAt = null,
     errorMessage = null,
   } = {}
@@ -104,8 +98,6 @@ const updateConversionJobStatus = async (
   const updateFields = { status };
   if (convertedFilePath) updateFields.convertedFilePath = convertedFilePath;
   if (errorReportPath) updateFields.errorReportPath = errorReportPath;
-  if (remoteConvertedPath) updateFields.remoteConvertedPath = remoteConvertedPath;
-  if (remoteErrorPath) updateFields.remoteErrorPath = remoteErrorPath;
   if (completedAt) updateFields.completedAt = completedAt;
   if (errorMessage) updateFields.errorMessage = errorMessage;
 
@@ -121,37 +113,6 @@ const deleteJobsByUserId = async (userId, session = null) => {
   return await ConversionJob.deleteMany({ userId: userId }, options);
 };
 
-/**
- * Obtiene el ultimo job automatizado para un archivo y tipo de documento,
- * incluyendo la ruta remota del ultimo CSV subido (para poder borrarlo).
- */
-const getLatestAutomatedJobByFileNameAndDocType = async (
-  fileName,
-  documentType,
-  site = null,
-) => {
-  const query = {
-    fileName,
-    isAutomated: true,
-    "conversionOptions.documentType": documentType,
-    remoteConvertedPath: { $exists: true },
-  };
-  if (site) query.site = site;
-
-  return await ConversionJob.findOne(query)
-    .sort({ createdAt: -1 })
-    .lean();
-};
-
-const getLatestAutomatedJobByFileName = async (fileName) => {
-  return await ConversionJob.findOne({
-    fileName,
-    isAutomated: true,
-  })
-    .sort({ createdAt: -1 })
-    .lean();
-};
-
 module.exports = {
   createConversionJob,
   getConversionJobById,
@@ -159,6 +120,4 @@ module.exports = {
   getPaginatedJobsForUserScope,
   getPaginatedAllJobs,
   deleteJobsByUserId,
-  getLatestAutomatedJobByFileNameAndDocType,
-  getLatestAutomatedJobByFileName,
 };
