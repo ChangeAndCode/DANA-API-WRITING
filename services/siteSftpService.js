@@ -2,12 +2,15 @@ const Client = require("ssh2-sftp-client");
 const fs = require("fs");
 const path = require("path");
 const { VALID_SITES } = require("../data/siteConfig");
+const { withTimeout } = require("../utils/promiseTimeout");
 
 const DEFAULT_PORT = 22;
 const DEFAULT_READY_TIMEOUT = 20000;
 const DEFAULT_KEEPALIVE_INTERVAL = 10000;
 const DEFAULT_KEEPALIVE_COUNT = 5;
 const DEFAULT_MAX_CONNECTION_ATTEMPTS = 2;
+const DEFAULT_OPERATION_TIMEOUT_MS = 30000;
+const DEFAULT_CLOSE_TIMEOUT_MS = 3000;
 const VALID_NAME_STRATEGIES = new Set([
   "overwrite",
   "none",
@@ -100,6 +103,14 @@ const getSiteConfiguration = (site, env = process.env) => {
         DEFAULT_MAX_CONNECTION_ATTEMPTS,
       ),
       5,
+    ),
+    operationTimeoutMs: parsePositiveInteger(
+      env.SFTP_OPERATION_TIMEOUT_MS,
+      DEFAULT_OPERATION_TIMEOUT_MS,
+    ),
+    closeTimeoutMs: parsePositiveInteger(
+      env.SFTP_CLOSE_TIMEOUT_MS,
+      DEFAULT_CLOSE_TIMEOUT_MS,
     ),
   };
 };
@@ -255,16 +266,29 @@ const getErrorText = (error) =>
 
 const isTransientConnectionError = (error) => {
   const text = getErrorText(error);
-  return /ECONNRESET|ECONNREFUSED|ETIMEDOUT|TIMED OUT|SOCKET CLOSED|CONNECTION LOST/.test(
+  return /ECONNRESET|ECONNREFUSED|ETIMEDOUT|TIMED OUT|SFTP_CONNECTION_TIMEOUT|SOCKET CLOSED|CONNECTION LOST/.test(
     text,
   );
 };
 
-const closeClient = async (client) => {
+const terminateClient = (client) => {
   try {
-    await client.end();
+    client?.client?.end();
   } catch {
-    // Closing errors are intentionally ignored and never expose connection data.
+    // Ending a stuck socket is best effort.
+  }
+};
+
+const closeClient = async (client, timeoutMs) => {
+  try {
+    await withTimeout(client.end(), timeoutMs, {
+      code: "SFTP_CLOSE_TIMEOUT",
+      message: "SFTP connection close timed out.",
+      onTimeout: () => terminateClient(client),
+    });
+  } catch {
+    terminateClient(client);
+    // Closing errors must never hide the transfer result or original error.
   }
 };
 
@@ -280,14 +304,30 @@ const runWithConnectionRetries = async (config, operation) => {
     let stage = "connect";
 
     try {
-      await client.connect(createConnectionOptions(config));
+      await withTimeout(
+        client.connect(createConnectionOptions(config)),
+        Math.min(DEFAULT_READY_TIMEOUT, config.operationTimeoutMs),
+        {
+          code: "SFTP_CONNECTION_TIMEOUT",
+          message: "SFTP connection timed out.",
+          onTimeout: () => terminateClient(client),
+        },
+      );
       stage = "operation";
-      const result = await operation(client, config);
-      await closeClient(client);
+      const result = await withTimeout(
+        operation(client, config),
+        config.operationTimeoutMs,
+        {
+          code: "SFTP_OPERATION_TIMEOUT",
+          message: "SFTP operation timed out.",
+          onTimeout: () => terminateClient(client),
+        },
+      );
+      await closeClient(client, config.closeTimeoutMs);
       return { ...result, connectionAttempts: attempt };
     } catch (error) {
       lastError = error;
-      await closeClient(client);
+      await closeClient(client, config.closeTimeoutMs);
 
       const canRetry =
         stage === "connect" &&
@@ -351,7 +391,10 @@ const uploadFileToDirectoryForSite = async ({
   );
 
   return runWithConnectionRetries(config, async (client) => {
-    await client.mkdir(remoteDirectory, true);
+    const remoteDirectoryExists = await client.exists(remoteDirectory);
+    if (!remoteDirectoryExists) {
+      await client.mkdir(remoteDirectory, true);
+    }
     const finalRemotePath = await resolveRemotePath(
       client,
       requestedRemotePath,
@@ -420,6 +463,18 @@ const sanitizeSftpError = (error) => {
     return {
       code: "SFTP_AUTHENTICATION_FAILED",
       message: "No se pudo autenticar con el servidor SFTP.",
+    };
+  }
+  if (error?.code === "SFTP_CONNECTION_TIMEOUT") {
+    return {
+      code: error.code,
+      message: "El servidor SFTP no respondio dentro del tiempo esperado.",
+    };
+  }
+  if (error?.code === "SFTP_OPERATION_TIMEOUT") {
+    return {
+      code: error.code,
+      message: "La operacion SFTP excedio el tiempo maximo permitido.",
     };
   }
   if (/ETIMEDOUT|TIMED OUT/.test(text)) {

@@ -229,7 +229,7 @@ const getAdminFileDocumentOrThrow = async ({
 };
 
 const SFTP_IN_PROGRESS_STATUSES = ["pending", "sending"];
-const DEFAULT_SFTP_LOCK_TIMEOUT_MS = 15 * 60 * 1000;
+const DEFAULT_SFTP_LOCK_TIMEOUT_MS = 60 * 1000;
 const MAX_STORED_SFTP_ERROR_LENGTH = 500;
 
 const getSftpLockTimeoutMs = () => {

@@ -1425,3 +1425,9 @@ h2 {
 .master-enrichment-summary ul {
   margin: 0;
 }
+#deleteModalMessage.is-error {
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: #fee2e2;
+  color: #b91c1c;
+}

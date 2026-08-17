@@ -34,11 +34,9 @@ const {
 const connectDB = require("./config/db");
 const { initializeCatalogs } = require("./services/catalogService");
 
-// NEW: Import cron scheduler and automated processing service for startup
-const { startAutomatedFileProcessor } = require("./config/cronScheduler");
 const {
-  ensureDirectoriesExist,
-} = require("./services/automatedProcessingService"); // For initial directory setup
+  ensureRuntimeDirectories,
+} = require("./services/runtimeDirectoryService");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -224,21 +222,16 @@ const startServer = async () => {
   await connectDB();
   await initializeCatalogs();
 
-  // --- Initialize Automated File Processing ---
-  // Ensure the necessary directories for automated processing exist ONCE on application start
   try {
-    await ensureDirectoriesExist();
-    console.log("[App Startup] All necessary file directories are ensured.");
-    // Start the cron job AFTER directories are confirmed ready
-    const cronSchedule =
-      process.env.AUTOMATED_FILE_PROCESSOR_CRON_SCHEDULE || "*/5 * * * *"; // Default to every 5 minutes
-    startAutomatedFileProcessor(cronSchedule);
+    const runtimeDirectories = await ensureRuntimeDirectories();
+    console.log(
+      `[App Startup] Runtime directories ready: ${runtimeDirectories.join(", ")}`,
+    );
   } catch (err) {
     console.error(
-      "[App Startup] Failed to ensure automated processing directories or start cron job:",
+      "[App Startup] Failed to ensure required file directories:",
       err,
     );
-    // Depending on criticality, you might want to exit the process here: process.exit(1);
   }
 
   app.listen(PORT, () => {
