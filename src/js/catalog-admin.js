@@ -168,6 +168,36 @@ document.querySelectorAll(".catalog-tab").forEach((tab) => tab.addEventListener(
   state.type = tab.dataset.type; await load();
 }));
 $("createCatalogBtn").addEventListener("click", () => openForm());
+$("exportCatalogBtn").addEventListener("click", async () => {
+  const button = $("exportCatalogBtn");
+  hideMessage();
+  button.disabled = true;
+  button.textContent = "Exportando...";
+  try {
+    const response = await fetch("/api/admin/catalogs/export");
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.message || "No se pudo exportar el catálogo.");
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || "catalogs.xlsx";
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showMessage("Catálogos exportados exitosamente.");
+  } catch (error) {
+    showMessage(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Exportar";
+  }
+});
 $("cancelCatalogBtn").addEventListener("click", closeForm);
 $("cancelDeleteCatalogBtn").addEventListener("click", closeDelete);
 

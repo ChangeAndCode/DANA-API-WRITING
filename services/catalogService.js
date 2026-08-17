@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const catalogRepository = require("../repositories/catalogRepository");
+const catalogAuditRepository = require("../repositories/catalogAuditRepository");
 const uomCatalog = require("../data/uomCatalog");
 const countryCatalog = require("../data/countryCatalog");
 const { normalizeCatalogLookup, normalizeAliases } = require("../utils/catalogNormalization");
@@ -12,6 +13,32 @@ const ensureType = (type) => {
     throw error;
   }
 };
+
+const snapshot = (type, entry) => {
+  if (!entry) return null;
+  const value = {
+    code: entry.code,
+    description: entry.description,
+    aliases: Array.from(entry.aliases || []),
+    isActive: entry.isActive,
+  };
+  if (type === "uom") {
+    value.origin = entry.origin || "";
+    value.allowsDecimals = Boolean(entry.allowsDecimals);
+  }
+  return value;
+};
+
+const audit = (type, entry, action, before, after, performedBy) =>
+  catalogAuditRepository.create({
+    catalogType: type,
+    entryId: entry._id,
+    code: entry.code,
+    action,
+    before,
+    after,
+    performedBy,
+  });
 
 const sanitize = (type, input = {}) => {
   ensureType(type);
@@ -110,6 +137,11 @@ const list = async (type) => {
   return catalogRepository.list(type, { includeInactive: true });
 };
 
+const listAudits = async (type, limit) => {
+  ensureType(type);
+  return catalogAuditRepository.list({ catalogType: type, limit });
+};
+
 const create = async (type, input, userId) => {
   const data = sanitize(type, input);
   const existing = await catalogRepository.findByCode(type, data.code);
@@ -120,6 +152,7 @@ const create = async (type, input, userId) => {
   }
   await assertNoLookupConflict(type, data);
   const created = await catalogRepository.create(type, { ...data, createdBy: userId, updatedBy: userId });
+  await audit(type, created, "created", null, snapshot(type, created), userId);
   await refreshCache();
   return created;
 };
@@ -134,6 +167,7 @@ const update = async (type, id, input, userId) => {
   const data = sanitize(type, { ...input, code: current.code });
   await assertNoLookupConflict(type, data, id);
   const updated = await catalogRepository.update(type, id, { ...data, code: current.code, updatedBy: userId });
+  await audit(type, updated, "updated", snapshot(type, current), snapshot(type, updated), userId);
   await refreshCache();
   return updated;
 };
@@ -148,17 +182,19 @@ const setActive = async (type, id, isActive, userId) => {
     await assertNoLookupConflict(type, { code: current.code, description: current.description, aliases: current.aliases || [] }, id);
   }
   const updated = await catalogRepository.update(type, id, { isActive, updatedBy: userId });
+  await audit(type, updated, isActive ? "activated" : "deactivated", snapshot(type, current), snapshot(type, updated), userId);
   await refreshCache();
   return updated;
 };
 
-const remove = async (type, id) => {
+const remove = async (type, id, userId) => {
   ensureType(type);
   if (!mongoose.Types.ObjectId.isValid(id)) { const error = new Error("ID de catalogo no valido."); error.status = 400; throw error; }
   const removed = await catalogRepository.deleteById(type, id);
   if (!removed) { const error = new Error("Valor de catalogo no encontrado."); error.status = 404; throw error; }
+  await audit(type, removed, "deleted", snapshot(type, removed), null, userId);
   await refreshCache();
   return removed;
 };
 
-module.exports = { initializeCatalogs, refreshCache, list, create, update, setActive, remove, sanitize };
+module.exports = { initializeCatalogs, refreshCache, list, listAudits, create, update, setActive, remove, sanitize };

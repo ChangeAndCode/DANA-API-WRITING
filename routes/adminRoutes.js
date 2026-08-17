@@ -17,6 +17,8 @@ const ADMIN_PROTECTED = [
 router.get('/users', ADMIN_PROTECTED, adminController.getAllUsers);
 router.put('/users/:userId/access', ADMIN_PROTECTED, adminController.updateUserAccess);
 router.delete('/users/:userId', ADMIN_PROTECTED, adminController.deleteUser);
+router.get('/catalogs/export', ADMIN_PROTECTED, catalogController.exportCatalogs);
+router.get('/catalogs/:type/audits', ADMIN_PROTECTED, catalogController.listCatalogAudits);
 router.get('/catalogs/:type', ADMIN_PROTECTED, catalogController.listCatalog);
 router.post('/catalogs/:type', ADMIN_PROTECTED, catalogController.createCatalogEntry);
 router.put('/catalogs/:type/:id', ADMIN_PROTECTED, catalogController.updateCatalogEntry);
