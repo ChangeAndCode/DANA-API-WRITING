@@ -278,9 +278,6 @@ const applyTransformations = (parsedData, documentType) => {
     return transformedData;
   }
 
-  console.log(
-    `[Transformation] Starting transformations for document type: ${documentType}`
-  );
 
   records.forEach((record, index) => {
     const rowNum = index + 2;

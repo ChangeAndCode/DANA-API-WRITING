@@ -1,6 +1,7 @@
 // controllers/fileController.js
 const fileConversionService = require("../services/fileConversionService");
 const conversionJobRepository = require("../repositories/conversionJobRepository");
+const userRepository = require("../repositories/userRepository");
 const path = require("path");
 const fs = require("fs/promises");
 const mongoose = require("mongoose");
@@ -46,6 +47,13 @@ const ADMIN_FILE_MODELS = {
   splScrap: SPLScrap,
 };
 
+const ADMIN_FILE_TYPE_CODES = {
+  finishedProduct: "FG",
+  rawMaterial: "RM",
+  billOfMaterials: "BM",
+  splScrap: "PL",
+};
+
 const VALID_ADMIN_FILE_TYPES = Object.keys(ADMIN_FILE_MODELS);
 const ADMIN_FILE_TYPES_ERROR_MESSAGE =
   "Solo finishedProduct, rawMaterial, billOfMaterials y splScrap estan habilitados.";
@@ -73,6 +81,22 @@ const requireAdminFileModelByType = (type) => {
 
 const normalizeAdminFileName = (value) =>
   typeof value === "string" ? value.trim() : "";
+
+const getCopyUserLabel = (user) =>
+  user?.displayName || user?.email || String(user?.id || user?._id || "unknown");
+
+const getCopyUserLabelById = async (userId) => {
+  const normalizedUserId = userId?._id || userId;
+  const fallback = String(normalizedUserId || "unknown");
+  if (!mongoose.Types.ObjectId.isValid(normalizedUserId)) return fallback;
+
+  try {
+    const user = await userRepository.findUserById(normalizedUserId);
+    return user ? getCopyUserLabel(user) : fallback;
+  } catch {
+    return fallback;
+  }
+};
 
 const VALID_USER_SITES = VALID_SITES;
 
@@ -2054,19 +2078,25 @@ const sendAdminFileViaSftp = async (req, res) => {
       });
     }
 
-    console.info("[SFTP] Archivo enviado.", {
-      documentId: String(id),
-      documentType: type,
+    console.info("[SFTP] Completed.", {
+      fileName:
+        normalizeAdminFileName(lockedDocument.adminFileName) ||
+        preparedFile.remoteFileName,
+      type: ADMIN_FILE_TYPE_CODES[type] || type,
       site: targetSite,
-      masterFileUpdate:
-        masterFileUpdate?.required
-          ? {
-              masterFileId: masterFileUpdate.masterFileId,
+      sendDate: sentDelivery.sentAt
+        ? new Date(sentDelivery.sentAt).toISOString()
+        : new Date().toISOString(),
+      user: getCopyUserLabel(req.user),
+      ...(masterFileUpdate?.required
+        ? {
+            masterFileUpdate: {
               added: masterFileUpdate.added,
               updated: masterFileUpdate.updated,
               unchanged: masterFileUpdate.unchanged,
-            }
-          : null,
+            },
+          }
+        : {}),
     });
 
     let responseDocument = null;
@@ -2327,6 +2357,16 @@ const copyAdminFileById = async (req, res) => {
     });
     const targetSite = resolveDocumentSiteForWrite(req.user, doc.site);
 
+    const copyType = ADMIN_FILE_TYPE_CODES[type] || type;
+    const copyDate = new Date().toISOString();
+    const sourceCreator = await getCopyUserLabelById(doc.createdBy);
+    console.log("[Copy] Copying file.", {
+      sourceFileName: normalizeAdminFileName(doc.adminFileName) || String(doc._id),
+      type: copyType,
+      copyDate,
+      user: sourceCreator,
+    });
+
     await assertAdminFileNameAvailable(normalizedName, {
       site: targetSite || undefined,
     });
@@ -2340,6 +2380,13 @@ const copyAdminFileById = async (req, res) => {
       site: targetSite || undefined,
       userId: req.user.id,
       rows: doc.rows,
+    });
+
+    console.log("[Copy] Completed.", {
+      copiedFileName: normalizedName,
+      type: copyType,
+      copyDate,
+      user: getCopyUserLabel(req.user),
     });
 
     return res.status(201).json({
@@ -2499,6 +2546,13 @@ const updateAdminFileById = async (req, res) => {
       });
     }
 
+    console.log("[Update] Completed.", {
+      fileName: nextAdminFileName || String(updatedDocument._id),
+      type: ADMIN_FILE_TYPE_CODES[type] || type,
+      updateDate: new Date().toISOString(),
+      user: getCopyUserLabel(req.user),
+    });
+
     return res.status(200).json({
       message: "Archivo actualizado.",
       updatedAt: updatedDocument.updatedAt,
@@ -2540,6 +2594,15 @@ const deleteAdminFileById = async (req, res) => {
       });
     }
 
+    const deleteLogContext = {
+      fileName: normalizeAdminFileName(doc.adminFileName) || String(doc._id),
+      type: ADMIN_FILE_TYPE_CODES[type] || type,
+      deleteDate: new Date().toISOString(),
+      user: getCopyUserLabel(req.user),
+      documentId: String(doc._id),
+    };
+    console.log("[Delete] Deleting file.", deleteLogContext);
+
     const deleteFilter = createSftpAvailableFilter({
       id,
       timeoutMs: getSftpLockTimeoutMs(),
@@ -2553,6 +2616,7 @@ const deleteAdminFileById = async (req, res) => {
         code: "ADMIN_FILE_OPERATION_CONFLICT",
       });
     }
+    console.log("[Delete] Completed.", deleteLogContext);
     return res.status(200).json({ message: "Archivo eliminado." });
   } catch (error) {
     console.error("Error al borrar archivo admin:", error);
