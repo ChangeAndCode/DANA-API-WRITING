@@ -90,6 +90,17 @@ body {
   background: #eab308 !important;
 }
 
+.sftp-btn:disabled,
+.sftp-btn:disabled:hover,
+.sftp-btn:disabled:focus {
+  color: #78716c;
+  background: #e7dfb4 !important;
+  cursor: not-allowed;
+  opacity: 0.72;
+  outline: none;
+  box-shadow: none;
+}
+
 #adminFilesTable td.sftp-status-cell {
   text-align: center;
 }
