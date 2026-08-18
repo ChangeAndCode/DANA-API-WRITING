@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const panel = document.getElementById("adminFilesPanel");
   const tableBody = document.querySelector("#adminFilesTable tbody");
   const siteColumnHeader = document.getElementById("siteColumnHeader");
+  const catalogAdminButton = document.getElementById("catalogAdminButton");
   const deleteModal = document.getElementById("deleteModal");
   const deleteConfirmBtn = document.getElementById("deleteConfirmBtn");
   const deleteModalMessage = document.getElementById("deleteModalMessage");
@@ -222,8 +223,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const applySiteColumnVisibility = () => {
-    if (!siteColumnHeader) return;
-    siteColumnHeader.classList.toggle("hidden", !isAdminViewer);
+    if (siteColumnHeader) {
+      siteColumnHeader.classList.toggle("hidden", !isAdminViewer);
+    }
+    if (catalogAdminButton) {
+      catalogAdminButton.classList.toggle("hidden", !isAdminViewer);
+    }
   };
 
   const loadAdminStatus = async () => {
@@ -366,10 +371,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       const sftpBtn = document.createElement("button");
       sftpBtn.type = "button";
       sftpBtn.className = "admin-action-btn sftp-btn";
-      sftpBtn.title = "Enviar por SFTP";
+      const sftpAlreadySent = getSftpStatusKey(doc) === "sent";
+      sftpBtn.disabled = sftpAlreadySent;
+      sftpBtn.title = sftpAlreadySent
+        ? "Edita el archivo para volver a enviarlo"
+        : "Enviar por SFTP";
       sftpBtn.setAttribute(
         "aria-label",
-        `Enviar ${getAdminDocName(doc)} por SFTP`,
+        sftpAlreadySent
+          ? `Archivo ${getAdminDocName(doc)} ya enviado; edita para reenviar`
+          : `Enviar ${getAdminDocName(doc)} por SFTP`,
       );
       sftpBtn.dataset.documentId = doc._id;
       sftpBtn.dataset.documentType = currentDocType;
@@ -718,7 +729,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       return "Reintentar";
     }
     if (status === "sent") {
-      return "Reenv\u00edo";
+      return "Ya enviado";
     }
     return "Env\u00edo";
   };
@@ -726,17 +737,19 @@ document.addEventListener("DOMContentLoaded", async () => {
   const updateSftpControls = () => {
     const status = getSftpStatusKey(pendingSftpDoc);
     const isInProgress = status === "pending" || status === "sending";
+    const isAlreadySent = status === "sent";
     const hasSite = !!normalizeSite(sftpSiteSelect?.value);
 
     if (sftpSiteSelect) {
-      sftpSiteSelect.disabled = isSftpSubmitting || !isAdminViewer;
+      sftpSiteSelect.disabled =
+        isSftpSubmitting || isAlreadySent || !isAdminViewer;
     }
     if (sftpCancelBtn) {
       sftpCancelBtn.disabled = isSftpSubmitting;
     }
     if (sftpConfirmBtn) {
       sftpConfirmBtn.disabled =
-        isSftpSubmitting || isInProgress || !hasSite;
+        isSftpSubmitting || isInProgress || isAlreadySent || !hasSite;
       sftpConfirmBtn.textContent = isSftpSubmitting
         ? "Procesando..."
         : getSftpActionLabel();
@@ -794,8 +807,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     const delivery = getSftpDelivery(doc);
+    const status = getSftpStatusKey(doc);
     const selectedSite = normalizeSite(
-      delivery.site || doc?.site || currentUserSite,
+      status === "not_sent"
+        ? doc?.site || currentUserSite || delivery.site
+        : delivery.site || doc?.site || currentUserSite,
     );
     if (sftpSiteSelect) {
       sftpSiteSelect.value = selectedSite;

@@ -27,6 +27,15 @@ const sftpDeliverySchema = new mongoose.Schema(
       min: 0,
     },
     lastAttemptAt: Date,
+    operationId: {
+      type: String,
+      trim: true,
+      select: false,
+    },
+    lockExpiresAt: {
+      type: Date,
+      select: false,
+    },
     sentAt: Date,
     lastAttemptBy: {
       type: mongoose.Schema.Types.ObjectId,

@@ -99,7 +99,14 @@ setupPassportJwt(passport); // Set up JWT strategy
 // This middleware should be placed BEFORE any specific HTML routes below,
 // so that linked assets are found first.
 app.get(
-  ["/file-admin.html", "/catalog-admin.html"],
+  "/file-admin.html",
+  authenticateRequest,
+  ensureApiAccess,
+  (req, res) => res.sendFile(path.join(__dirname, "dist", req.path.slice(1))),
+);
+
+app.get(
+  "/catalog-admin.html",
   authenticateRequest,
   ensureApiAccess,
   ensureAdmin,

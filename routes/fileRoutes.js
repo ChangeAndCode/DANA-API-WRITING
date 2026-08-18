@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const fileController = require('../controllers/fileController');
 // Importa el nuevo middleware unificado
-const { authenticateRequest, ensureApiAccess, ensureAdmin } = require('../middleware/authMiddleware');
+const { authenticateRequest, ensureApiAccess } = require('../middleware/authMiddleware');
 
 // Middleware para autenticar la solicitud y luego verificar acceso a la API
 // authenticateRequest se encarga de probar JWT o Sesión.
@@ -11,7 +11,6 @@ const API_PROTECTED = [
   authenticateRequest, // <--- Único middleware para autenticación
   ensureApiAccess,
 ];
-const ADMIN_PROTECTED = [...API_PROTECTED, ensureAdmin];
 
 // Ruta para subir y convertir un archivo
 router.post(
@@ -39,50 +38,50 @@ router.post(
 router.post('/create-manual', API_PROTECTED, fileController.createManualFile);
 
 // Ruta para listar archivos por tipo (admin UI)
-router.get('/admin-files', ADMIN_PROTECTED, fileController.getAdminFilesByType);
+router.get('/admin-files', API_PROTECTED, fileController.getAdminFilesByType);
 router.get(
   '/admin-files/:id',
-  ADMIN_PROTECTED,
+  API_PROTECTED,
   fileController.getAdminFileById,
 );
 router.get(
   '/admin-files/:id/download',
-  ADMIN_PROTECTED,
+  API_PROTECTED,
   fileController.downloadAdminFileById,
 );
 router.put(
   '/admin-files/:id',
-  ADMIN_PROTECTED,
+  API_PROTECTED,
   fileController.updateAdminFileById,
 );
 router.post(
   '/admin-files/:id/copy',
-  ADMIN_PROTECTED,
+  API_PROTECTED,
   fileController.copyAdminFileById,
 );
 router.post(
   '/admin-files/:id/sftp',
-  ADMIN_PROTECTED,
+  API_PROTECTED,
   fileController.sendAdminFileViaSftp,
 );
 router.get(
   '/admin-files/:id/master-sync/audits',
-  ADMIN_PROTECTED,
+  API_PROTECTED,
   fileController.getAdminFileMasterSyncAudits,
 );
 router.get(
   '/admin-files/:id/master-sync/audits/:auditId',
-  ADMIN_PROTECTED,
+  API_PROTECTED,
   fileController.getAdminFileMasterSyncAuditDetails,
 );
 router.post(
   '/admin-files/:id/master-sync/retry',
-  ADMIN_PROTECTED,
+  API_PROTECTED,
   fileController.retryAdminFileMasterSync,
 );
 router.delete(
   '/admin-files/:id',
-  ADMIN_PROTECTED,
+  API_PROTECTED,
   fileController.deleteAdminFileById,
 );
 
