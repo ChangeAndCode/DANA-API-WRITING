@@ -580,11 +580,17 @@ const manualCatalogState = {
   unitOfMeasure: {
     options: [],
     optionsSet: new Set(),
+    inactive: new Map(),
   },
   countryOfOrigin: {
     options: [],
     optionsSet: new Set(),
+    inactive: new Map(),
   },
+};
+const historicalCatalogEditState = {
+  originalValues: new Map(),
+  releasedValues: new Set(),
 };
 let manualCatalogLoadPromise = null;
 let activeCatalogAutocompleteInput = null;
@@ -623,6 +629,25 @@ function applyManualCatalogOptions(payload = {}) {
   ).sort((left, right) => left.localeCompare(right));
   manualCatalogState.countryOfOrigin.optionsSet = new Set(
     manualCatalogState.countryOfOrigin.options,
+  );
+
+  const inactiveUom = Array.isArray(payload.inactiveUnitOfMeasure)
+    ? payload.inactiveUnitOfMeasure
+    : [];
+  const inactiveCountries = Array.isArray(payload.inactiveCountryOfOrigin)
+    ? payload.inactiveCountryOfOrigin
+    : [];
+  manualCatalogState.unitOfMeasure.inactive = new Map(
+    inactiveUom.map((entry) => [
+      normalizeCatalogCodeValue(entry.code),
+      String(entry.description || "").trim(),
+    ]),
+  );
+  manualCatalogState.countryOfOrigin.inactive = new Map(
+    inactiveCountries.map((entry) => [
+      normalizeCatalogCodeValue(entry.code),
+      String(entry.description || "").trim(),
+    ]),
   );
 
   syncAllCatalogAutocompleteInputs();
@@ -921,6 +946,69 @@ function syncAllCatalogAutocompleteInputs() {
     .forEach((input) => syncCatalogAutocompleteInput(input));
 }
 
+function getHistoricalCatalogInputKey(input) {
+  const rowElement = input?.closest("tr");
+  const sourceIndex = Number.parseInt(rowElement?.dataset.creationSourceIndex || "", 10);
+  const documentType = fileType?.value;
+  const row = Number.isInteger(sourceIndex)
+    ? fileCreationPageState[documentType]?.rows?.[sourceIndex]
+    : null;
+  const rowId = row ? getCreationRowId(row) : "";
+  return rowId && input?.dataset.catalogKey
+    ? `${rowId}:${input.dataset.catalogKey}`
+    : "";
+}
+
+function isAllowedHistoricalCatalogInput(input, value) {
+  const inputKey = getHistoricalCatalogInputKey(input);
+  return Boolean(
+    inputKey &&
+    !historicalCatalogEditState.releasedValues.has(inputKey) &&
+    historicalCatalogEditState.originalValues.get(inputKey) === value
+  );
+}
+
+function initializeHistoricalCatalogEditState(documentType) {
+  historicalCatalogEditState.originalValues.clear();
+  historicalCatalogEditState.releasedValues.clear();
+  const rows = fileCreationPageState[documentType]?.rows || [];
+  const warnings = new Map();
+
+  rows.forEach((row) => {
+    const rowId = getCreationRowId(row);
+    ["unitOfMeasure", "countryOfOrigin"].forEach((catalogKey) => {
+      const code = normalizeCatalogCodeValue(row?.[catalogKey]);
+      const description = manualCatalogState[catalogKey].inactive.get(code);
+      if (!rowId || !code || description === undefined) return;
+      historicalCatalogEditState.originalValues.set(`${rowId}:${catalogKey}`, code);
+      const warningKey = `${catalogKey}:${code}`;
+      const current = warnings.get(warningKey) || {
+        catalogKey,
+        code,
+        description,
+        count: 0,
+      };
+      current.count += 1;
+      warnings.set(warningKey, current);
+    });
+  });
+
+  const modal = document.getElementById("inactiveCatalogWarningModal");
+  const list = document.getElementById("inactiveCatalogWarningList");
+  if (!modal || !list || warnings.size === 0) return;
+
+  list.innerHTML = "";
+  warnings.forEach(({ catalogKey, code, description, count }) => {
+    const item = document.createElement("li");
+    const label = catalogKey === "unitOfMeasure"
+      ? "Unit of Measure"
+      : "Country of Origin";
+    item.textContent = `${label}: ${code}${description ? ` - ${description}` : ""} (${count})`;
+    list.appendChild(item);
+  });
+  modal.classList.remove("hidden");
+}
+
 function validateCatalogCodeInput(input, { reportIfInvalid = false } = {}) {
   if (!input) return true;
 
@@ -937,7 +1025,7 @@ function validateCatalogCodeInput(input, { reportIfInvalid = false } = {}) {
 
   const allowedSet = manualCatalogState[catalogKey].optionsSet;
 
-  if (allowedSet.size > 0 && !allowedSet.has(nextValue)) {
+  if (allowedSet.size > 0 && !allowedSet.has(nextValue) && !isAllowedHistoricalCatalogInput(input, nextValue)) {
     const message =
       catalogKey === "countryOfOrigin"
         ? "Selecciona un codigo valido de Country of Origin."
@@ -963,6 +1051,11 @@ function bindCatalogAutocompleteInput(input, catalogKey) {
 
   input.addEventListener("input", () => {
     input.value = normalizeCatalogCodeValue(input.value);
+    const historicalInputKey = getHistoricalCatalogInputKey(input);
+    const originalValue = historicalCatalogEditState.originalValues.get(historicalInputKey);
+    if (originalValue && input.value !== originalValue) {
+      historicalCatalogEditState.releasedValues.add(historicalInputKey);
+    }
     if (catalogKey === "unitOfMeasure") {
       handleSplScrapUnitOfMeasureInput(input, false);
     }
@@ -5362,11 +5455,20 @@ async function loadFileForEdit(docId, docType) {
         );
       }
 
+    initializeHistoricalCatalogEditState(targetType);
+
     if (createFileButton) createFileButton.classList.add("hidden");
     if (updateFileButton) updateFileButton.classList.remove("hidden");
   } catch (err) {
     renderErrorList([{ message: err.message || "Error al cargar archivo." }]);
   }
+}
+
+const inactiveCatalogWarningClose = document.getElementById("inactiveCatalogWarningClose");
+if (inactiveCatalogWarningClose) {
+  inactiveCatalogWarningClose.addEventListener("click", () => {
+    document.getElementById("inactiveCatalogWarningModal")?.classList.add("hidden");
+  });
 }
 
 initializeCreationTableFilters();

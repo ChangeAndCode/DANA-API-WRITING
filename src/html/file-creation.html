@@ -154,6 +154,19 @@
       <a href="/auth/dashboard" class="button">Volver al Dashboard</a>
     </div>
   </div>
+  <div id="inactiveCatalogWarningModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="inactiveCatalogWarningTitle">
+    <div class="modal inactive-catalog-warning">
+      <h3 id="inactiveCatalogWarningTitle">Valores de catálogo inactivos</h3>
+      <p>
+        Este archivo conserva valores históricos que ya no están activos. Puedes dejarlos sin cambios,
+        pero si modificas una de estas celdas sólo podrás seleccionar un valor activo.
+      </p>
+      <ul id="inactiveCatalogWarningList"></ul>
+      <div class="modal-actions">
+        <button type="button" id="inactiveCatalogWarningClose">Entendido</button>
+      </div>
+    </div>
+  </div>
   <script type="module" src="../js/file-creation.js"></script>
 </body>
 

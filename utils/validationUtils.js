@@ -35,6 +35,17 @@ const parseNumericValue = (value) => {
  * @returns {{isValid: boolean, errors: Array<Object>}}
  */
 const validateDataIntegrity = (data, documentType, options = {}) => {
+  const historicalCatalogAllowances = {
+    unitOfMeasure: new Map(Object.entries(options.historicalCatalogAllowances?.unitOfMeasure || {})),
+    countryOfOrigin: new Map(Object.entries(options.historicalCatalogAllowances?.countryOfOrigin || {})),
+  };
+  const consumeHistoricalCatalogValue = (catalogKey, code) => {
+    const allowances = historicalCatalogAllowances[catalogKey];
+    const remaining = Number(allowances.get(code) || 0);
+    if (remaining <= 0) return false;
+    allowances.set(code, remaining - 1);
+    return true;
+  };
   const allowEmptyMandatoryFields =
     typeof options.allowEmptyMandatoryFields === "boolean"
       ? options.allowEmptyMandatoryFields
@@ -197,7 +208,7 @@ const validateDataIntegrity = (data, documentType, options = {}) => {
       const coo = record[cooFieldName];
       if (!isBlank(coo)) {
         const code = String(coo).trim().toUpperCase();
-        if (!isValidCountryCode(code)) {
+        if (!isValidCountryCode(code) && !consumeHistoricalCatalogValue("countryOfOrigin", code)) {
           errors.push({
             type: "Integrity Error",
             message: `Row ${rowNum}: "${cooFieldName}" must be a valid 2-letter code from catalog. Got "${coo}".`,
@@ -219,7 +230,7 @@ const validateDataIntegrity = (data, documentType, options = {}) => {
       const uom = record[uomFieldName];
       if (!isBlank(uom)) {
         const code = String(uom).trim().toUpperCase();
-        if (!isValidUOMCode(code)) {
+        if (!isValidUOMCode(code) && !consumeHistoricalCatalogValue("unitOfMeasure", code)) {
           errors.push({
             type: "Integrity Error",
             message: `Row ${rowNum}: "${uomFieldName}" must be a valid uppercase code from catalog. Got "${uom}".`,

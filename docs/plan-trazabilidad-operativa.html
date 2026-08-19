@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Plan de trazabilidad operativa - DANA API Writing</title>
+  <style>
+    @page { size: Letter; margin: 18mm 16mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #243447; font-size: 10.5pt; line-height: 1.42; margin: 0; }
+    h1 { color: #173b63; font-size: 23pt; margin: 0 0 4px; }
+    h2 { color: #145da0; font-size: 15pt; border-bottom: 1px solid #b9cce0; padding-bottom: 4px; margin: 22px 0 9px; }
+    h3 { color: #294e73; font-size: 12pt; margin: 15px 0 6px; }
+    p { margin: 5px 0 9px; }
+    ul, ol { margin: 5px 0 10px 20px; padding: 0; }
+    li { margin: 3px 0; }
+    code, pre { font-family: Consolas, "Courier New", monospace; }
+    pre { background: #f3f6f9; border-left: 4px solid #4b88c6; padding: 9px 11px; white-space: pre-wrap; font-size: 8.8pt; break-inside: avoid; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 9pt; }
+    th { background: #173b63; color: white; text-align: left; }
+    th, td { border: 1px solid #c8d4df; padding: 6px; vertical-align: top; }
+    tr:nth-child(even) td { background: #f7f9fb; }
+    .meta { color: #5f6f7f; margin-bottom: 18px; }
+    .callout { background: #fff8df; border: 1px solid #ead48a; padding: 9px 11px; margin: 10px 0; }
+    .good { color: #176b3a; font-weight: bold; }
+    .high { color: #a12b24; font-weight: bold; }
+    .page-break { break-before: page; }
+    footer { margin-top: 24px; color: #718096; font-size: 8.5pt; }
+  </style>
+</head>
+<body>
+  <h1>Plan de trazabilidad operativa</h1>
+  <p class="meta">DANA-API-WRITING · Revisión del 18 de agosto de 2026</p>
+
+  <p>Este documento organiza los mensajes operativos y las auditorías administrativas que conviene completar antes de producción. Los logs de PM2 sirven para diagnóstico; las acciones que requieren evidencia permanente deben conservarse en MongoDB.</p>
+
+  <div class="callout"><strong>Regla general:</strong> registrar una acción solamente después de que la operación haya sido confirmada. No imprimir contraseñas, hashes, tokens, cookies, secretos, rutas locales completas ni contenido de archivos.</div>
+
+  <h2>1. Estado actual</h2>
+  <table>
+    <thead><tr><th>Módulo</th><th>Estado</th><th>Observación</th></tr></thead>
+    <tbody>
+      <tr><td>Archivos administrativos</td><td class="good">Parcialmente completo</td><td>Copy, Update, Delete y SFTP ya tienen mensajes de éxito estructurados.</td></tr>
+      <tr><td>Catálogos UOM/COO</td><td class="good">Auditoría completa</td><td>MongoDB guarda created, updated, activated, deactivated y deleted con before/after y performedBy.</td></tr>
+      <tr><td>Sincronización Master File</td><td class="good">Auditoría disponible</td><td>MasterFileSyncAudit y MasterFileSyncChange guardan el resultado detallado.</td></tr>
+      <tr><td>Usuarios</td><td class="high">Faltante</td><td>Actualizar acceso, eliminar usuario, cambiar contraseña y desvincular Google solo registran errores.</td></tr>
+      <tr><td>Master Files directos</td><td class="high">Faltante</td><td>Importación, edición, copia y eliminación no tienen mensajes de éxito ni auditoría administrativa equivalente.</td></tr>
+      <tr><td>Creación manual</td><td class="high">Debe ajustarse</td><td>El mensaje actual expone base de datos y colección, pero no identifica claramente archivo, sede y usuario.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>2. Paso 1 — Creación manual de archivos</h2>
+  <p>Reemplazar el mensaje técnico de inserción por un único mensaje posterior al guardado:</p>
+  <pre>[Create] Completed. {
+  fileName: 'Nombre del archivo',
+  type: 'RM',
+  site: 'gaiim',
+  creationDate: 'fecha ISO',
+  user: 'usuario'
+}</pre>
+  <p>Eliminar del log exitoso los nombres internos de base de datos, colección y el ID de MongoDB.</p>
+
+  <h2>3. Paso 2 — Administración de usuarios</h2>
+  <h3>Actualizar acceso</h3>
+  <pre>[UserAccess] Completed. {
+  targetUser: 'usuario modificado',
+  isActive: true,
+  role: 'user',
+  site: 'gaiim',
+  updateDate: 'fecha ISO',
+  performedBy: 'administrador'
+}</pre>
+  <h3>Eliminar usuario</h3>
+  <pre>[UserDelete] Completed. {
+  targetUser: 'usuario eliminado',
+  deleteDate: 'fecha ISO',
+  performedBy: 'administrador'
+}</pre>
+  <p>Como mejora posterior, crear una auditoría MongoDB con before/after para cambios de acceso. Los trabajos históricos del usuario deben conservarse.</p>
+
+  <h2>4. Paso 3 — Seguridad de la cuenta</h2>
+  <pre>[Password] Updated. {
+  user: 'usuario',
+  updateDate: 'fecha ISO'
+}</pre>
+  <pre>[GoogleAccount] Unlinked. {
+  user: 'usuario',
+  unlinkDate: 'fecha ISO'
+}</pre>
+  <p>No registrar contraseñas anteriores o nuevas, hashes, tokens JWT, cookies ni identificadores de sesión.</p>
+
+  <div class="page-break"></div>
+  <h2>5. Paso 4 — Operaciones directas de Master Files</h2>
+  <h3>Importar</h3>
+  <pre>[MasterFileImport] Completed. {
+  fileName: 'Master RM', type: 'RM', sites: ['gaiim'],
+  recordCount: 1200, importDate: 'fecha ISO', user: 'administrador'
+}</pre>
+  <h3>Editar</h3>
+  <pre>[MasterFileUpdate] Completed. {
+  fileName: 'Master RM', type: 'RM',
+  inserted: 2, updated: 10, deleted: 1,
+  updateDate: 'fecha ISO', user: 'administrador'
+}</pre>
+  <h3>Copiar</h3>
+  <pre>[MasterFileCopy] Completed. {
+  sourceFileName: 'Master original', copiedFileName: 'Master copia',
+  type: 'RM', copyDate: 'fecha ISO', user: 'administrador'
+}</pre>
+  <h3>Eliminar</h3>
+  <pre>[MasterFileDelete] Completed. {
+  fileName: 'Master eliminado', type: 'RM', deletedRecords: 1200,
+  deleteDate: 'fecha ISO', user: 'administrador'
+}</pre>
+  <p>Crear posteriormente una auditoría MongoDB para importaciones, ediciones, copias y eliminaciones directas. La auditoría de sincronización actual no sustituye esta evidencia.</p>
+
+  <h2>6. Paso 5 — Acciones opcionales</h2>
+  <ul>
+    <li><strong>Exportación de catálogos:</strong> registrar usuario y fecha si se desea conocer quién extrajo la información.</li>
+    <li><strong>Reintento de Master Sync:</strong> registrar archivo, tipo, sede, usuario y resumen added/updated/unchanged.</li>
+    <li><strong>Registro público:</strong> registrar correo o nombre y fecha, nunca contraseña o token.</li>
+  </ul>
+
+  <h2>7. Acciones que no necesitan log de éxito</h2>
+  <ul>
+    <li>Listados y consultas de archivos, usuarios o catálogos.</li>
+    <li>Abrir editores, consultar auditorías o buscar Part Number.</li>
+    <li>Validar filas y cargar opciones de catálogos.</li>
+    <li>Importar Excel únicamente para mostrarlo en el editor sin guardar.</li>
+    <li>Lecturas normales de perfil y descargas rutinarias.</li>
+  </ul>
+
+  <h2>8. IDs internos y seguridad</h2>
+  <p>Los ObjectId de MongoDB no son credenciales. Se pueden omitir de los logs exitosos para mejorar legibilidad. En errores técnicos pueden conservarse porque permiten correlacionar el incidente con el documento correcto.</p>
+  <p>Los logs del backend aparecen en la terminal de desarrollo y en los archivos administrados por PM2; no se envían automáticamente a la consola del navegador.</p>
+
+  <h2>9. Orden de implementación y verificación</h2>
+  <ol>
+    <li>Corregir el mensaje de creación manual.</li>
+    <li>Agregar logs de administración de usuarios.</li>
+    <li>Agregar eventos de seguridad de cuenta.</li>
+    <li>Agregar logs de acciones directas sobre Master Files.</li>
+    <li>Crear auditoría MongoDB para usuarios.</li>
+    <li>Crear auditoría MongoDB para Master Files directos.</li>
+    <li>Evaluar eventos opcionales.</li>
+    <li>Ejecutar <code>npm test</code>, <code>npm run build</code> y <code>git diff --check</code>.</li>
+    <li>Probar cada acción con éxito y error, confirmando que no aparezca un mensaje Completed falso.</li>
+  </ol>
+
+  <footer>Documento generado para revisión técnica y toma de decisiones. No sustituye la auditoría persistente de MongoDB.</footer>
+</body>
+</html>

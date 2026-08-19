@@ -1442,3 +1442,26 @@ h2 {
   background: #fee2e2;
   color: #b91c1c;
 }
+.inactive-catalog-warning {
+  max-width: 620px;
+}
+
+.inactive-catalog-warning p {
+  line-height: 1.5;
+}
+
+.inactive-catalog-warning ul {
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 16px 0;
+  padding-left: 24px;
+}
+
+.inactive-catalog-warning li {
+  margin-bottom: 8px;
+}
+
+.inactive-catalog-warning .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+}

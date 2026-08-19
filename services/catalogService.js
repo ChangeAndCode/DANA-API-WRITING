@@ -137,6 +137,12 @@ const list = async (type) => {
   return catalogRepository.list(type, { includeInactive: true });
 };
 
+const listInactive = async (type) => {
+  ensureType(type);
+  const entries = await catalogRepository.list(type, { includeInactive: true });
+  return entries.filter((entry) => entry.isActive === false);
+};
+
 const listAudits = async (type, limit) => {
   ensureType(type);
   return catalogAuditRepository.list({ catalogType: type, limit });
@@ -197,4 +203,4 @@ const remove = async (type, id, userId) => {
   return removed;
 };
 
-module.exports = { initializeCatalogs, refreshCache, list, listAudits, create, update, setActive, remove, sanitize };
+module.exports = { initializeCatalogs, refreshCache, list, listInactive, listAudits, create, update, setActive, remove, sanitize };
