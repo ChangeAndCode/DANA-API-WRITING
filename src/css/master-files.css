@@ -125,3 +125,53 @@ body {
     gap: 12px;
   }
 }
+.master-upload-launcher {
+  width: 100%;
+  margin-bottom: 25px;
+}
+
+#openMasterUploadModalButton {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  padding: 16px 24px;
+  border: 0;
+  border-radius: 10px;
+  background-color: #007bff;
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  box-sizing: border-box;
+  box-shadow: 0 4px 10px rgba(0, 123, 255, 0.22);
+}
+
+#openMasterUploadModalButton:hover,
+#openMasterUploadModalButton:focus-visible {
+  background-color: #0069d9;
+}
+
+.master-upload-modal {
+  width: min(680px, calc(100% - 32px));
+  max-width: 680px;
+  text-align: left;
+}
+
+.master-upload-file-group {
+  margin-bottom: 22px;
+}
+
+.master-upload-file-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.master-upload-file-group input[type="file"] {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  box-sizing: border-box;
+}

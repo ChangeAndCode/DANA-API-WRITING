@@ -29,45 +29,10 @@
     </header>
 
     <!-- Visible únicamente para administradores -->
-    <section id="adminUploadSection" class="panel hidden">
-      <h2>Cargar archivo madre</h2>
-
-      <div class="form-group">
-        <label for="masterFileInput">Seleccionar archivo</label>
-
-        <input
-          id="masterFileInput"
-          type="file"
-          accept=".xlsx,.xls,.xlsm"
-        />
-      </div>
-
-      <fieldset class="site-selector">
-        <legend>Sedes donde se utilizará</legend>
-
-        <label>
-          <input
-            type="checkbox"
-            name="masterFileSites"
-            value="gaiim"
-          />
-          GAIIM
-        </label>
-
-        <label>
-          <input
-            type="checkbox"
-            name="masterFileSites"
-            value="p1a"
-          />
-          P1A
-        </label>
-      </fieldset>
-
-      <button id="uploadMasterFileButton" type="button" disabled>
-        Cargar archivo
+    <section id="adminUploadSection" class="master-upload-launcher hidden">
+      <button id="openMasterUploadModalButton" type="button">
+        Cargar archivo madre
       </button>
-
     </section>
 
     <section id="masterFilesPanel" class="admin-files-panel">
@@ -277,6 +242,47 @@
       </button>
     </nav>
   </main>
+
+  <div
+    id="masterUploadModal"
+    class="modal-overlay hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="masterUploadModalTitle"
+  >
+    <div class="modal master-upload-modal">
+      <h3 id="masterUploadModalTitle">
+        Cargar archivo madre
+      </h3>
+      <div class="form-group master-upload-file-group">
+        <label for="masterFileInput">Seleccionar archivo</label>
+        <input
+          id="masterFileInput"
+          type="file"
+          accept=".xlsx,.xls,.xlsm"
+        />
+      </div>
+      <fieldset class="site-selector">
+        <legend>Sedes donde se utilizará</legend>
+        <label>
+          <input type="checkbox" name="masterFileSites" value="gaiim" />
+          GAIIM
+        </label>
+        <label>
+          <input type="checkbox" name="masterFileSites" value="p1a" />
+          P1A
+        </label>
+      </fieldset>
+      <div class="modal-actions">
+        <button type="button" id="masterUploadCancelButton" class="button">
+          Cancelar
+        </button>
+        <button type="button" id="uploadMasterFileButton" class="button" disabled>
+          Cargar archivo
+        </button>
+      </div>
+    </div>
+  </div>
 
   <div
     id="masterDeleteModal"

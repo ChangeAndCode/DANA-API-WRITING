@@ -10,6 +10,15 @@ const masterSiteColumnHeader = document.getElementById(
 const masterSiteFilterContainer = document.getElementById(
   "masterSiteFilterContainer",
 );
+const openMasterUploadModalButton = document.getElementById(
+  "openMasterUploadModalButton",
+);
+const masterUploadModal = document.getElementById(
+  "masterUploadModal",
+);
+const masterUploadCancelButton = document.getElementById(
+  "masterUploadCancelButton",
+);
 const masterFileInput = document.getElementById(
   "masterFileInput",
 );
@@ -1048,6 +1057,30 @@ const loadCurrentUser = async () => {
 
 };
 
+const resetMasterUploadForm = () => {
+  masterFileInput.value = "";
+  masterSiteCheckboxes.forEach((checkbox) => {
+    checkbox.checked = false;
+  });
+  updateUploadButtonState();
+};
+const openMasterUploadModal = () => {
+  if (currentUser?.role !== "admin") {
+    return;
+  }
+  masterUploadModal.classList.remove("hidden");
+  masterFileInput.focus();
+};
+const closeMasterUploadModal = ({ reset = false } = {}) => {
+  if (uploadInProgress) {
+    return;
+  }
+  masterUploadModal.classList.add("hidden");
+  if (reset) {
+    resetMasterUploadForm();
+  }
+};
+
 const handleFileSelection = () => {
   const selectedFile =
     masterFileInput.files?.[0];
@@ -1185,13 +1218,8 @@ const uploadMasterFile = async () => {
       "success",
     );
 
-    masterFileInput.value = "";
-
-    masterSiteCheckboxes.forEach(
-      (checkbox) => {
-        checkbox.checked = false;
-      },
-    );
+    resetMasterUploadForm();
+    masterUploadModal.classList.add("hidden");
     await loadMasterFiles({
       showErrors: false,
     });
@@ -1468,6 +1496,22 @@ document.addEventListener(
 
     updateMasterSortIcon();
 
+    openMasterUploadModalButton.addEventListener(
+      "click",
+      openMasterUploadModal,
+    );
+    masterUploadCancelButton.addEventListener(
+      "click",
+      () => closeMasterUploadModal({ reset: true }),
+    );
+    masterUploadModal.addEventListener(
+      "click",
+      (event) => {
+        if (event.target === masterUploadModal) {
+          closeMasterUploadModal({ reset: true });
+        }
+      },
+    );
     masterFileInput.addEventListener(
       "change",
       handleFileSelection,
@@ -1548,6 +1592,12 @@ document.addEventListener(
     document.addEventListener(
       "keydown",
       (event) => {
+        if (
+          event.key === "Escape" &&
+          !masterUploadModal.classList.contains("hidden")
+        ) {
+          closeMasterUploadModal({ reset: true });
+        }
         if (
           event.key === "Escape" &&
           !masterDeleteModal.classList
