@@ -15,7 +15,8 @@
       <p id="adminMessage" class="message admin-message"></p>
 
       <h2>Gestión de Usuarios</h2>
-      <table class="users-table">
+      <div class="users-table-scroll">
+        <table class="users-table">
         <thead>
           <tr>
             <th>Email / Nombre</th>
@@ -30,7 +31,8 @@
             <td colspan="5" class="no-users">Cargando usuarios...</td>
           </tr>
         </tbody>
-      </table>
+        </table>
+      </div>
 
       <div class="dashboard-nav">
         <a href="/auth/dashboard" class="button">Volver al Dashboard</a>

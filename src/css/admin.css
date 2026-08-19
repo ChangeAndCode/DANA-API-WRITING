@@ -23,12 +23,50 @@ h1 {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  margin-top: 30px;
+  margin-top: 0;
   text-align: left;
   border-radius: 8px;
   overflow: hidden;
   /* Ensures rounded corners apply to borders */
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.users-table-scroll {
+  margin-top: 30px;
+  overflow: hidden;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.users-table-scroll .users-table {
+  display: block;
+  box-shadow: none;
+}
+
+.users-table thead,
+.users-table tbody {
+  display: block;
+}
+
+.users-table tbody {
+  max-height: 730px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.users-table thead {
+  padding-right: 15px;
+}
+
+.users-table tr {
+  display: grid;
+  grid-template-columns: 1.15fr 1.35fr 1.45fr 0.9fr 1.05fr;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.users-table tbody tr {
+  min-height: 73px;
 }
 
 .users-table th,
