@@ -271,6 +271,24 @@ const isTransientConnectionError = (error) => {
   );
 };
 
+const createSftpClient = (name = "site-sftp") =>
+  new Client(name, {
+    error: (error) => {
+      if (getErrorText(error).includes("ECONNRESET")) {
+        console.info(
+          "[SFTP] Conexión cerrada por el servidor después de completar la operación.",
+        );
+        return;
+      }
+      console.error("[SFTP] Error de conexión no controlado.", {
+        code: error?.code || "SFTP_ERROR",
+        message: error?.message || "Error desconocido.",
+      });
+    },
+    end: () => {},
+    close: () => {},
+  });
+
 const terminateClient = (client) => {
   try {
     client?.client?.end();
@@ -300,7 +318,7 @@ const runWithConnectionRetries = async (config, operation) => {
     attempt <= config.maxConnectionAttempts;
     attempt += 1
   ) {
-    const client = new Client();
+    const client = createSftpClient(`site-sftp-${config.site}`);
     let stage = "connect";
 
     try {

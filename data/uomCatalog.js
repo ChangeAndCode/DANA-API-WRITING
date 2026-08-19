@@ -3,14 +3,9 @@ const path = require("path");
 const fs = require("fs");
 const { normalizeCatalogLookup } = require("../utils/catalogNormalization");
 
-let xlsx = null;
-try {
-  xlsx = require("xlsx");
-} catch (_) {
-  console.warn(
-    "[UOMCatalog] Paquete 'xlsx' no instalado; se usara solo el catalogo estatico."
-  );
-}
+// El respaldo Excel heredado está deshabilitado. MongoDB es la fuente
+// operativa y el catálogo estático cubre la contingencia de arranque.
+const xlsx = null;
 
 const DEFAULT_UOM_FILES = [
   "Unit Of Measure catalog.xlsx",
@@ -148,8 +143,7 @@ function loadUOMOnce() {
       }) + Excel (${added}) desde ${catalogPath}`;
     } else {
       if (DISABLE_EXCEL) sourceMsg += " Lectura Excel desactivada por env.";
-      else if (!xlsx) sourceMsg += " Paquete 'xlsx' no instalado.";
-      else if (!fs.existsSync(catalogPath)) {
+      else if (xlsx && !fs.existsSync(catalogPath)) {
         sourceMsg += ` Excel no encontrado en ${catalogPath}`;
       }
     }

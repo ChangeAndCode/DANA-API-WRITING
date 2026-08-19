@@ -3,14 +3,9 @@ const path = require("path");
 const fs = require("fs");
 const { normalizeCatalogLookup } = require("../utils/catalogNormalization");
 
-let xlsx = null;
-try {
-  xlsx = require("xlsx");
-} catch (_) {
-  console.warn(
-    "[CountryCatalog] Paquete 'xlsx' no instalado; se usara solo el catalogo estatico."
-  );
-}
+// El respaldo Excel heredado está deshabilitado. MongoDB es la fuente
+// operativa y el catálogo estático cubre la contingencia de arranque.
+const xlsx = null;
 
 const DEFAULT_COUNTRY_FILES = [
   "Country_of_Origin_catalog.xlsx",
@@ -422,9 +417,7 @@ function loadCatalogOnce() {
     } else if (DISABLE_EXCEL) {
       sourceMsg +=
         " Lectura de Excel desactivada por env (COUNTRY_CATALOG_DISABLE_EXCEL=true).";
-    } else if (!xlsx) {
-      sourceMsg += " Paquete 'xlsx' no instalado.";
-    } else if (!fs.existsSync(catalogPath)) {
+    } else if (xlsx && !fs.existsSync(catalogPath)) {
       sourceMsg += ` Excel no encontrado en ${catalogPath}`;
     }
   } catch (error) {

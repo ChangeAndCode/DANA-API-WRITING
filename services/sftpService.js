@@ -83,6 +83,25 @@ function isTransientEndError(err) {
   return err.code === "ECONNRESET" || /ECONNRESET|Socket closed/i.test(msg);
 }
 
+function createSftpClient(name) {
+  return new Client(name, {
+    error: (error) => {
+      if (isTransientEndError(error)) {
+        console.info(
+          "[SFTP] Conexión cerrada por el servidor después de completar la operación.",
+        );
+        return;
+      }
+      console.error("[SFTP] Error de conexión no controlado.", {
+        code: getSafeErrorCode(error),
+        message: error?.message || "Error desconocido.",
+      });
+    },
+    end: () => {},
+    close: () => {},
+  });
+}
+
 function getSafeErrorCode(error) {
   const code = String(error?.code || "SFTP_ERROR").toUpperCase();
   return /^[A-Z0-9_]+$/.test(code) ? code : "SFTP_ERROR";
@@ -102,7 +121,7 @@ function createSafeSftpError(message, error) {
 async function uploadFilesViaSftp(files) {
   if (!files || !files.length) return [];
 
-  const sftp = new Client();
+  const sftp = createSftpClient("sftp-operation");
   const results = [];
   let allPutsCompleted = false; // marcamos cuando terminamos el loop de puts
   let connectDone = false;
@@ -195,7 +214,7 @@ async function uploadFilesViaSftp(files) {
  */
 async function deleteRemoteFile(remotePath) {
   if (!remotePath) return false;
-  const sftp = new Client();
+  const sftp = createSftpClient("sftp-operation");
   let connected = false;
   try {
     await sftp.connect(sftpConfig);
