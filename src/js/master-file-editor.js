@@ -3043,61 +3043,6 @@ const saveMasterEditorChanges =
       deletedMasterRecordIds.clear();
       setEditorDirty(false);
 
-      /*
-       * Volvemos a consultar el archivo para que
-       * las filas nuevas reciban el ID generado
-       * por MongoDB.
-       */
-      const refreshedPage =
-        isMasterEditorFilterActive()
-          ? 1
-          : Math.min(
-              currentEditorPage,
-              Math.max(
-                1,
-                Math.ceil(
-                  Number(
-                    data.masterFile
-                      ?.recordCount || 0,
-                  ) /
-                    MASTER_EDITOR_PAGE_SIZE,
-                ),
-              ),
-            );
-
-      const refreshedData =
-        await loadMasterEditorData(
-          masterFileId,
-          refreshedPage,
-        );
-
-      currentMasterRevision =
-        Number(
-          refreshedData
-            .masterFile
-            .revision,
-        );
-
-      renderMasterMetadata(
-        refreshedData.masterFile,
-      );
-
-      renderMasterTable(
-        refreshedData
-          .masterFile
-          .headers,
-
-        refreshedData.records,
-      );
-
-      renderMasterPagination(
-        refreshedData.pagination,
-      );
-      configureMasterEditorTableFilter(
-        refreshedData.masterFile.headers,
-        refreshedData.pagination,
-      );
-
       showEditorMessage(
         `${data.message} Nuevas: ${
           data.insertedRecordCount || 0
@@ -3105,9 +3050,18 @@ const saveMasterEditorChanges =
           data.updatedRecordCount || 0
         }. Eliminadas: ${
           data.deletedRecordCount || 0
-        }.`,
+        }. Regresando a Archivos Madre...`,
         "success",
       );
+
+      window.setTimeout(() => {
+        window.location.assign(
+          masterEditorBackLink?.href ||
+            "/master-files",
+        );
+      }, 5000);
+      return;
+
     } catch (error) {
       console.error(
         "Error al guardar archivo madre:",
