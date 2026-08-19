@@ -968,6 +968,17 @@ function isAllowedHistoricalCatalogInput(input, value) {
   );
 }
 
+function getCatalogValueFromRow(row, catalogKey) {
+  const fieldNames =
+    catalogKey === "unitOfMeasure"
+      ? ["unitOfMeasure", "Unit Of Measure", "Unit of Measure", "Unit of measure"]
+      : ["countryOfOrigin", "Country of Origin", "Country of origin"];
+  const fieldName = fieldNames.find((name) =>
+    Object.prototype.hasOwnProperty.call(row || {}, name),
+  );
+  return fieldName ? row[fieldName] : "";
+}
+
 function initializeHistoricalCatalogEditState(documentType) {
   historicalCatalogEditState.originalValues.clear();
   historicalCatalogEditState.releasedValues.clear();
@@ -977,7 +988,9 @@ function initializeHistoricalCatalogEditState(documentType) {
   rows.forEach((row) => {
     const rowId = getCreationRowId(row);
     ["unitOfMeasure", "countryOfOrigin"].forEach((catalogKey) => {
-      const code = normalizeCatalogCodeValue(row?.[catalogKey]);
+      const code = normalizeCatalogCodeValue(
+        getCatalogValueFromRow(row, catalogKey),
+      );
       const description = manualCatalogState[catalogKey].inactive.get(code);
       if (!rowId || !code || description === undefined) return;
       historicalCatalogEditState.originalValues.set(`${rowId}:${catalogKey}`, code);
@@ -1007,6 +1020,7 @@ function initializeHistoricalCatalogEditState(documentType) {
     list.appendChild(item);
   });
   modal.classList.remove("hidden");
+  document.getElementById("inactiveCatalogWarningClose")?.focus();
 }
 
 function validateCatalogCodeInput(input, { reportIfInvalid = false } = {}) {
@@ -5368,6 +5382,8 @@ async function loadFileForEdit(docId, docType) {
       return;
   }
   try {
+    await loadManualCatalogOptions(true);
+
     if (!currentFileCreationUser) {
       await loadFileCreationUserContext();
     }

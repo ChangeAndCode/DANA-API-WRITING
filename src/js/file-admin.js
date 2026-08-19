@@ -1321,6 +1321,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const loadUsers = async () => {
     if (usersLoaded) return;
+    if (!isAdminViewer) {
+      usersLoaded = true;
+      return;
+    }
     try {
       const response = await fetch("/api/admin/users");
       if (!response.ok) {
