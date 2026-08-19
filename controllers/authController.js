@@ -4,6 +4,7 @@ const userRepository = require('../repositories/userRepository'); // Necesario p
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const passport = require('passport'); // Necesario para la autenticación local
+const getUserLogName = (user) => String(user?.displayName || user?.email || 'Usuario').trim();
 
 const getLoginPage = (req, res) => {
   // Simplemente envía el archivo HTML de login
@@ -28,10 +29,12 @@ const handleLoginFailure = (req, res) => {
 };
 
 const handleLogout = (req, res, next) => {
+  const userName = getUserLogName(req.user);
   req.logout((err) => {
     if (err) {
       return next(err);
     }
+    console.info('[Auth] Logout completed.', { user: userName });
     res.redirect('/');
   });
 };
@@ -51,6 +54,7 @@ const registerUser = async (req, res) => {
 
     user = await userRepository.findOrCreateUserByEmailPassword(email, password);
 
+    console.info('[User] Registered.', { user: getUserLogName(user) });
     res.status(201).json({ message: 'Usuario registrado exitosamente. Por favor, inicie sesión.' });
   } catch (error) {
     console.error('Error al registrar usuario:', error);
@@ -85,6 +89,7 @@ const localLogin = (req, res, next) => {
         isActive: user.isActive,
       };
       const token = jwt.sign(jwtPayload, process.env.JWT_SECRET, { expiresIn: '7d' });
+      console.info('[Auth] Login completed.', { user: getUserLogName(user) });
       return res.status(200).json({ message: 'JWT generado exitosamente.', token: token });
     } else {
       req.logIn(user, async (err) => {
@@ -92,6 +97,7 @@ const localLogin = (req, res, next) => {
           console.error('Error al iniciar sesión local:', err);
           return next(err);
         }
+        console.info('[Auth] Login completed.', { user: getUserLogName(user) });
         res.status(200).json({ message: 'Inicio de sesión exitoso con email/contraseña.', redirect: '/auth/dashboard' });
       });
     }

@@ -8,6 +8,9 @@ const normalizeUserSite = (site) => {
   return typeof site === 'string' ? site.trim() : '';
 };
 
+const getUserLogName = (user) =>
+  String(user?.displayName || user?.email || 'Usuario').trim();
+
 const buildAdminUserResponse = (user) => ({
   id: user._id || user.id,
   displayName: user.displayName,
@@ -63,6 +66,7 @@ const updateUserAccess = async (req, res) => {
   }
 
   try {
+    const previousUser = await userRepository.findUserById(userId);
     const updatedUser = await userRepository.updateUserAccess(
       userId,
       isActive,
@@ -72,6 +76,17 @@ const updateUserAccess = async (req, res) => {
 
     if (!updatedUser) {
       return res.status(404).json({ message: 'Usuario no encontrado.' });
+    }
+
+    const userLog = { user: getUserLogName(updatedUser) };
+    if (previousUser && previousUser.isActive !== updatedUser.isActive) {
+      console.info(updatedUser.isActive ? '[User] Activated.' : '[User] Deactivated.', userLog);
+    }
+    if (previousUser && previousUser.role !== updatedUser.role) {
+      console.info('[User] Role updated.', userLog);
+    }
+    if (previousUser && String(previousUser.site || '') !== String(updatedUser.site || '')) {
+      console.info('[User] Site updated.', userLog);
     }
 
     res.status(200).json({
@@ -161,6 +176,7 @@ const deleteUser = async (req, res) => {
 
     await session.commitTransaction();
 
+    console.info('[User] Deleted.', { user: getUserLogName(deletedUser) });
     res.status(200).json({
       message:
         'Usuario eliminado exitosamente. Sus trabajos de conversión se mantienen para auditoría.',

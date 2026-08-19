@@ -30,6 +30,11 @@ router.get(
     failureRedirect: '/auth/login-failure', // Redirect to the public failure route on auth failure
   }),
   (req, res) => {
+    if (req.user && req.query.state !== 'link=true') {
+      console.info('[Auth] Login completed.', {
+        user: String(req.user.displayName || req.user.email || 'Usuario').trim(),
+      });
+    }
     // Determine redirect based on state from the initial /google request
     if (req.user && req.query.state === 'link=true') {
       // If linking was successful, redirect back to dashboard

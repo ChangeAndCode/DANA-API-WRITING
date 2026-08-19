@@ -1373,9 +1373,13 @@ const createManualFile = async (req, res) => {
         savedCount = result.savedDoc ? 1 : 0;
         savedDb = result.savedDb;
         savedCollection = result.savedCollection;
-        console.log(
-          `[${documentType}] Inserted ${savedCount} doc into ${savedDb}.${savedCollection}`
-        );
+        console.info("[Create] Completed.", {
+          fileName: resolvedAdminFileName,
+          nomenclature,
+          type: ADMIN_FILE_TYPE_CODES[documentType] || documentType,
+          creationDate: new Date().toISOString(),
+          user: getCopyUserLabel(req.user),
+        });
       }
     }
 
@@ -1538,7 +1542,15 @@ const downloadAdminFileById = async (req, res) => {
         if (!res.headersSent) {
           res.status(500).json({ message: "Error al descargar el archivo." });
         }
+        return;
       }
+      console.info("[Download] Completed.", {
+        fileName: normalizeAdminFileName(doc.adminFileName) || nomenclature,
+        nomenclature,
+        type: ADMIN_FILE_TYPE_CODES[type] || type,
+        downloadDate: new Date().toISOString(),
+        user: getCopyUserLabel(req.user),
+      });
     });
   } catch (error) {
     console.error("Error al descargar archivo admin:", error);
@@ -2117,6 +2129,7 @@ const sendAdminFileViaSftp = async (req, res) => {
       fileName:
         normalizeAdminFileName(lockedDocument.adminFileName) ||
         preparedFile.remoteFileName,
+      nomenclature: uploadResult.remoteFileName,
       type: ADMIN_FILE_TYPE_CODES[type] || type,
       site: targetSite,
       sendDate: sentDelivery.sentAt
@@ -2342,6 +2355,17 @@ const retryAdminFileMasterSync = async (req, res) => {
       });
     const responseDocument =
       await getSftpDocumentSummary(model, id);
+
+    console.info("[MasterFile] Sync completed.", {
+      fileName: normalizeAdminFileName(doc.adminFileName) || "Archivo",
+      type: ADMIN_FILE_TYPE_CODES[type] || type,
+      user: getCopyUserLabel(req.user),
+      summary: {
+        added: masterFileUpdate.added,
+        updated: masterFileUpdate.updated,
+        unchanged: masterFileUpdate.unchanged,
+      },
+    });
 
     return res.status(200).json({
       message: `Archivo madre actualizado: ${masterFileUpdate.added} agregados, ${masterFileUpdate.updated} actualizados y ${masterFileUpdate.unchanged} sin cambios.`,
